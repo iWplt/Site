@@ -235,6 +235,7 @@ export function flattenFields(sections: FormSection[]) {
 }
 
 export function optionLabel(options: FormOption[] | undefined, value: unknown): string {
+  if (typeof value === "boolean") return value ? "نعم" : "لا";
   if (!options) return String(value ?? "");
   for (const option of options) {
     if (option.value === value) return option.label;
