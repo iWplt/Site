@@ -21,7 +21,7 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
               width={960}
               height={600}
               priority
-              className="aspect-[16/10] w-full object-cover object-[center_28%] sm:object-[center_32%]"
+              className="aspect-[16/10] w-full object-cover object-[center_18%] sm:object-[center_22%]"
               sizes="(max-width: 1024px) 100vw, 56vw"
             />
           </div>
