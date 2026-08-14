@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6efe1;
+  --foreground: #2c3225;
+  --olive: #3f472d;
+  --olive-dark: #252b1c;
+  --olive-soft: #65724a;
+  --cream: #f6efe1;
+  --sand: #e8d8bc;
+  --gold: #b59a63;
+  --paper: #fffaf0;
+  --danger: #9d2f2f;
+  --success: #386a3d;
+  --muted: #776e5e;
+  --border: rgba(63, 71, 45, 0.18);
+  --shadow: 0 24px 80px rgba(37, 43, 28, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-warka);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(181, 154, 99, 0.28), transparent 30rem),
+    linear-gradient(135deg, #fbf6e9 0%, #f2e6cf 52%, #ebe0c7 100%);
+  color: var(--foreground);
+  font-family: var(--font-warka), system-ui, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--olive);
+  color: var(--paper);
+}
+
+.warka-card {
+  border: 1px solid var(--border);
+  background: rgba(255, 250, 240, 0.82);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.warka-pattern {
+  background-image:
+    linear-gradient(rgba(63, 71, 45, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(63, 71, 45, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.ltr {
+  direction: ltr;
+  unicode-bidi: embed;
+}
