@@ -57,7 +57,15 @@ export type FormField = {
   locked?: boolean;
   accept?: string[];
   maxSizeMb?: number;
+  uploadMode?: "single" | "multiple";
+  maxFiles?: number;
   conditional?: ConditionalRule[];
+};
+
+export type BatchStats = {
+  total: number;
+  submitted: number;
+  pending: number;
 };
 
 export type FormSection = {
@@ -157,5 +165,6 @@ export type ExcelWorkbookPreview = {
     name: string;
     columns: Array<{ key: string; label: string; index: number }>;
     rows: Record<string, unknown>[];
+    previewRows?: Record<string, unknown>[];
   }>;
 };

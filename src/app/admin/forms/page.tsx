@@ -1,4 +1,6 @@
-import { Badge, Card, LinkButton } from "@/components/ui";
+import { duplicateFormAction, setFormStatusAction } from "@/app/actions";
+import { CreateFormPanel } from "@/components/create-form-panel";
+import { Badge, Button, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { listBatches, listForms } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
@@ -14,8 +16,8 @@ export default async function FormsPage() {
           <p className="text-sm font-bold text-[var(--gold)]">Dynamic Form Builder</p>
           <h1 className="text-4xl font-black text-[var(--olive-dark)]">النماذج الديناميكية</h1>
         </div>
-        {user.role === "OWNER" ? <LinkButton href="/admin/forms/new">إنشاء نموذج</LinkButton> : null}
       </div>
+      {user.role === "OWNER" ? <CreateFormPanel batches={batches.map((batch) => ({ id: batch.id, name: batch.name }))} /> : null}
       <div className="grid gap-4">
         {forms.map((form) => {
           const batch = batches.find((entry) => entry.id === form.batch_id);
@@ -30,7 +32,9 @@ export default async function FormsPage() {
                   </div>
                   <p className="mt-2 text-[var(--muted)]">{form.internal_description}</p>
                 </div>
-                <LinkButton href={`/f/${form.slug}`} variant="secondary">فتح الرابط العام</LinkButton>
+                <LinkButton href={`/f/${form.slug}`} variant="secondary">
+                  فتح الرابط العام
+                </LinkButton>
               </div>
               <div className="mt-6 grid gap-3 sm:grid-cols-4">
                 <Info label="النوع" value={form.type === "BATCH" ? "نموذج دفعة" : "طلب فردي"} />
@@ -38,6 +42,30 @@ export default async function FormsPage() {
                 <Info label="الدفعة" value={batch?.name ?? "غير مرتبط"} />
                 <Info label="الأقسام / الحقول" value={`${form.definition.sections.length} / ${fields}`} />
               </div>
+              {user.role === "OWNER" ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <form
+                    action={async () => {
+                      "use server";
+                      await setFormStatusAction(form.id, form.status === "published" ? "closed" : "published");
+                    }}
+                  >
+                    <Button type="submit" variant="secondary">
+                      {form.status === "published" ? "إغلاق النموذج" : "نشر النموذج"}
+                    </Button>
+                  </form>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await duplicateFormAction(form.id);
+                    }}
+                  >
+                    <Button type="submit" variant="secondary">
+                      نسخ النموذج
+                    </Button>
+                  </form>
+                </div>
+              ) : null}
             </Card>
           );
         })}

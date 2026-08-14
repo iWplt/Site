@@ -1,42 +1,44 @@
 import type { FormDefinition, FormField, FormOption, FormSection } from "@/lib/types";
 
 const robeOptions: FormOption[] = [
-  { id: "robe-gulf", label: "الروب الخليجي", value: "gulf", description: "قصة فخمة ومناسبة للدفعات الرسمية." },
-  { id: "robe-american", label: "الروب الأمريكي", value: "american" },
-  { id: "robe-korean", label: "الروب الكوري", value: "korean" },
-  { id: "robe-cloche", label: "روب الكلوش", value: "cloche" },
-  { id: "robe-warka", label: "روب ورگة", value: "warka" },
-  { id: "robe-indian", label: "الروب الهندي", value: "indian" }
+  { id: "robe-gulf", label: "الروب الخليجي", value: "gulf", description: "قصة فخمة ومناسبة للدفعات الرسمية.", imageUrl: "/warka/robe-gulf.webp" },
+  { id: "robe-american", label: "الروب الأمريكي", value: "american", imageUrl: "/warka/robe-american.webp" },
+  { id: "robe-korean", label: "الروب الكوري", value: "korean", imageUrl: "/warka/robe-korean.webp" },
+  { id: "robe-cloche", label: "روب الكلوش", value: "cloche", imageUrl: "/warka/robe-cloche.webp" },
+  { id: "robe-warka", label: "روب ورگة", value: "warka", imageUrl: "/warka/robe-warka.webp" },
+  { id: "robe-indian", label: "الروب الهندي", value: "indian", imageUrl: "/warka/robe-indian.webp" }
 ];
 
 const sashOptions: FormOption[] = [
-  { id: "sash-normal", label: "وشاح عادي بدون ظهر", value: "normal_no_back" },
+  { id: "sash-normal", label: "وشاح عادي بدون ظهر", value: "normal_no_back", imageUrl: "/warka/sash-normal.webp" },
   {
     id: "sash-royal-ribbed",
     label: "وشاح ملكي - ظهر مضلع",
     value: "royal_ribbed",
+    imageUrl: "/warka/sash-royal-ribbed.webp",
     children: [
-      { id: "sash-royal-ribbed-plain", label: "ظهر سادة بدون تطريز", value: "royal_ribbed_plain" },
-      { id: "sash-royal-ribbed-embroidered", label: "ظهر مع تطريز", value: "royal_ribbed_embroidered" }
+      { id: "sash-royal-ribbed-plain", label: "ظهر سادة بدون تطريز", value: "royal_ribbed_plain", imageUrl: "/warka/sash-royal-ribbed.webp" },
+      { id: "sash-royal-ribbed-embroidered", label: "ظهر مع تطريز", value: "royal_ribbed_embroidered", imageUrl: "/warka/sash-royal-ribbed.webp" }
     ]
   },
   {
     id: "sash-royal-triangle",
     label: "وشاح ملكي - ظهر مثلث",
     value: "royal_triangle",
+    imageUrl: "/warka/sash-royal-triangle.webp",
     children: [
-      { id: "sash-royal-triangle-plain", label: "ظهر سادة بدون تطريز", value: "royal_triangle_plain" },
-      { id: "sash-royal-triangle-embroidered", label: "ظهر مع تطريز", value: "royal_triangle_embroidered" }
+      { id: "sash-royal-triangle-plain", label: "ظهر سادة بدون تطريز", value: "royal_triangle_plain", imageUrl: "/warka/sash-royal-triangle.webp" },
+      { id: "sash-royal-triangle-embroidered", label: "ظهر مع تطريز", value: "royal_triangle_embroidered", imageUrl: "/warka/sash-royal-triangle.webp" }
     ]
   },
-  { id: "sash-side", label: "وشاح جانبي / مائل", value: "side_slanted" }
+  { id: "sash-side", label: "وشاح جانبي / مائل", value: "side_slanted", imageUrl: "/warka/sash-side.webp" }
 ];
 
 const capOptions: FormOption[] = [
-  { id: "cap-normal", label: "قبعة عادية", value: "normal", description: "لا تحتوي على مثلث من الأمام." },
-  { id: "cap-royal", label: "قبعة ملكية", value: "royal", description: "تحتوي على مثلث من الأمام." },
-  { id: "cap-tuxedo", label: "قبعة توكسيدو", value: "tuxedo", description: "تحتوي على قماش ستن من الأسفل." },
-  { id: "cap-accent", label: "قبعة تطعيم", value: "accent", description: "تحتوي على تطعيم بلون الوشاح." }
+  { id: "cap-normal", label: "قبعة عادية", value: "normal", description: "لا تحتوي على مثلث من الأمام.", imageUrl: "/warka/cap-normal.webp" },
+  { id: "cap-royal", label: "قبعة ملكية", value: "royal", description: "تحتوي على مثلث من الأمام.", imageUrl: "/warka/cap-royal.webp" },
+  { id: "cap-tuxedo", label: "قبعة توكسيدو", value: "tuxedo", description: "تحتوي على قماش ستن من الأسفل.", imageUrl: "/warka/cap-tuxedo.webp" },
+  { id: "cap-accent", label: "قبعة تطعيم", value: "accent", description: "تحتوي على تطعيم بلون الوشاح.", imageUrl: "/warka/cap-accent.webp" }
 ];
 
 const imageUploadDefaults: Pick<FormField, "accept" | "maxSizeMb"> = {
@@ -119,6 +121,8 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           key: "robe_addition_image",
           label: "إرفاق صورة نموذج الاختيار المطلوب",
           type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
           conditional: [{ fieldKey: "robe_addition", operator: "not_equals", value: "none" }]
         }
       ]
@@ -149,6 +153,8 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           key: "sash_back_image",
           label: "صورة التصميم أو اللوكو المطلوب في ظهر الوشاح",
           type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
           conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
         },
         {
@@ -185,7 +191,9 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           id: "year_side_image",
           key: "year_side_image",
           label: "إرفاق صورة التصميم المطلوب",
-          type: "image_upload"
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5
         }
       ]
     },
@@ -206,14 +214,18 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           id: "cap_side_image",
           key: "cap_side_image",
           label: "تطريز القبعة الجانبي",
-          type: "image_upload"
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5
         },
         {
           ...imageUploadDefaults,
           id: "cap_top_image",
           key: "cap_top_image",
           label: "تطريز القبعة من الأعلى (المربع)",
-          type: "image_upload"
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5
         },
         {
           id: "cap_elastic",

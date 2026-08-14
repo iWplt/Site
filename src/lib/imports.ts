@@ -62,7 +62,8 @@ export async function analyzeWorkbook(file: File): Promise<ExcelWorkbookPreview>
       return {
         name,
         columns,
-        rows: rows.slice(0, 8)
+        rows,
+        previewRows: rows.slice(0, 8)
       };
     })
   };

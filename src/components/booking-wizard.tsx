@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Check, ImagePlus, Loader2, LockKeyhole, X } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { Check, Loader2, LockKeyhole } from "lucide-react";
+import { MultipleImageUpload, type UploadedFile } from "@/components/multiple-image-upload";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { defaultWizardSteps, optionLabel } from "@/lib/form-definition";
 import type { BookingFormRecord, FormField, FormSection } from "@/lib/types";
@@ -10,14 +11,6 @@ import { cn } from "@/lib/utils";
 type Props = {
   form: BookingFormRecord;
   studentName?: string;
-};
-
-type UploadedFile = {
-  path: string;
-  originalName: string;
-  mimeType: string;
-  size: number;
-  previewUrl?: string;
 };
 
 function fieldIsVisible(field: FormField, answers: Record<string, unknown>) {
@@ -45,12 +38,20 @@ export function BookingWizard({ form, studentName }: Props) {
   });
   const [files, setFiles] = useState<Record<string, UploadedFile[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ bookingNumber: string; studentName: string; submittedAt: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const sections = form.definition.sections;
   const isReview = step >= sections.length;
 
-  const visibleFields = useMemo(() => sections[step]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? [], [answers, sections, step]);
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
+
+  const visibleFields = useMemo(
+    () => sections[step]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? [],
+    [answers, sections, step]
+  );
 
   function setAnswer(key: string, value: unknown) {
     setAnswers((current) => ({ ...current, [key]: value }));
@@ -71,42 +72,15 @@ export function BookingWizard({ form, studentName }: Props) {
       if (field.type === "phone" && value && !/^(\+?964|0)?7[0-9\s-]{8,12}$/.test(String(value))) {
         nextErrors[field.key] = "يرجى إدخال رقم هاتف عراقي صحيح.";
       }
+      if (["image_upload", "file_upload"].includes(field.type) && field.required && !(files[field.key]?.length)) {
+        nextErrors[field.key] = "يرجى إرفاق صورة واحدة على الأقل.";
+      }
     }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function addFile(field: FormField, file: File) {
-    const response = await fetch("/api/uploads/sign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fieldKey: field.key, fileName: file.name, mimeType: file.type, size: file.size })
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      setErrors((current) => ({ ...current, [field.key]: payload.error ?? "تعذر رفع الملف." }));
-      return;
-    }
-
-    if (payload.signedUrl && payload.token) {
-      await fetch(payload.signedUrl, {
-        method: "PUT",
-        headers: { "x-upsert": "false", "Content-Type": file.type },
-        body: file
-      });
-    }
-
-    const uploaded: UploadedFile = {
-      path: payload.path,
-      originalName: file.name,
-      mimeType: file.type,
-      size: file.size,
-      previewUrl: URL.createObjectURL(file)
-    };
-    setFiles((current) => ({ ...current, [field.key]: [uploaded] }));
-  }
-
-  async function submit() {
+  function submit() {
     startTransition(async () => {
       const response = await fetch("/api/booking/submit", {
         method: "POST",
@@ -119,9 +93,9 @@ export function BookingWizard({ form, studentName }: Props) {
         return;
       }
       setSuccess({
-        bookingNumber: payload.bookingNumber ?? payload.booking_number,
-        studentName: payload.studentName ?? payload.student_name,
-        submittedAt: payload.submittedAt ?? payload.submitted_at
+        bookingNumber: payload.bookingNumber,
+        studentName: payload.studentName,
+        submittedAt: payload.submittedAt
       });
     });
   }
@@ -145,43 +119,81 @@ export function BookingWizard({ form, studentName }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <Card className="mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="mx-auto max-w-3xl pb-28">
+      <Card className="mb-4 !rounded-[1.5rem] !p-4">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-[var(--gold)]">بطاقة حجز رقمية</p>
-            <h1 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{form.name}</h1>
+            <p className="text-xs font-bold text-[var(--gold)]">بطاقة حجز رقمية</p>
+            <h1 className="mt-1 text-xl font-black leading-8 text-[var(--olive-dark)] sm:text-2xl">{form.name}</h1>
           </div>
-          <div className="grid grid-cols-6 gap-2">
-            {defaultWizardSteps.map((label, index) => (
-              <div key={label} className="flex flex-col items-center gap-1">
-                <span className={cn("h-2 w-8 rounded-full", index <= step ? "bg-[var(--olive)]" : "bg-[var(--sand)]")} />
-                <span className="hidden text-[10px] text-[var(--muted)] sm:block">{label}</span>
-              </div>
-            ))}
+          <div className="rounded-2xl bg-[#3f472d12] px-3 py-2 text-center">
+            <p className="text-[10px] font-bold text-[var(--muted)]">الخطوة</p>
+            <p className="text-lg font-black text-[var(--olive)]">
+              {Math.min(step + 1, sections.length + 1)}/{sections.length + 1}
+            </p>
           </div>
+        </div>
+        <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
+          {defaultWizardSteps.map((label, index) => (
+            <div key={label} className="min-w-0 flex-1">
+              <div className={cn("h-1.5 rounded-full", index <= step ? "bg-[var(--olive)]" : "bg-[var(--sand)]")} />
+              <p className="mt-1 truncate text-[10px] font-bold text-[var(--muted)]">{label}</p>
+            </div>
+          ))}
         </div>
       </Card>
 
       {isReview ? (
-        <ReviewStep sections={sections} answers={answers} files={files} onBack={() => setStep(sections.length - 1)} onSubmit={submit} pending={isPending} />
+        <ReviewStep
+          sections={sections}
+          answers={answers}
+          files={files}
+          pending={isPending}
+          onBack={() => setStep(sections.length - 1)}
+          onSubmit={submit}
+          onPreview={setLightbox}
+          error={errors.form}
+        />
       ) : (
-        <Card>
-          <p className="text-sm font-bold text-[var(--gold)]">الخطوة {step + 1} من {sections.length}</p>
-          <h2 className="mt-1 text-3xl font-black text-[var(--olive-dark)]">{sections[step].title}</h2>
-          {sections[step].description ? <p className="mt-2 text-[var(--muted)]">{sections[step].description}</p> : null}
-          <div className="mt-8 grid gap-6">
+        <Card className="!rounded-[1.5rem]">
+          <p className="text-sm font-bold text-[var(--gold)]">{sections[step].title}</p>
+          <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)] sm:text-3xl">{defaultWizardSteps[step]}</h2>
+          {sections[step].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[step].description}</p> : null}
+          <div className="mt-6 grid gap-5">
             {visibleFields.map((field) => (
-              <FieldRenderer key={field.id} field={field} value={answers[field.key]} files={files[field.key] ?? []} error={errors[field.key]} onChange={(value) => setAnswer(field.key, value)} onFile={(file) => addFile(field, file)} onRemoveFile={() => setFiles((current) => ({ ...current, [field.key]: [] }))} />
+              <FieldRenderer
+                key={field.id}
+                field={field}
+                value={answers[field.key]}
+                files={files[field.key] ?? []}
+                error={errors[field.key]}
+                onChange={(value) => setAnswer(field.key, value)}
+                onFiles={(next) => setFiles((current) => ({ ...current, [field.key]: next }))}
+              />
             ))}
-          </div>
-          {errors.form ? <p className="mt-4 rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{errors.form}</p> : null}
-          <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-            <Button variant="secondary" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>رجوع</Button>
-            <Button onClick={() => validateStep() && setStep((current) => current + 1)}>التالي</Button>
           </div>
         </Card>
       )}
+
+      {!isReview ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[rgba(246,239,225,0.96)] p-3 backdrop-blur">
+          <div className="mx-auto flex max-w-3xl gap-3">
+            <Button className="min-h-12 flex-1" variant="secondary" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>
+              رجوع
+            </Button>
+            <Button className="min-h-12 flex-1" onClick={() => validateStep() && setStep((current) => current + 1)}>
+              التالي
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {lightbox ? (
+        <button type="button" className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setLightbox(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="" className="max-h-[85vh] max-w-full rounded-2xl object-contain" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -192,44 +204,92 @@ function FieldRenderer({
   files,
   error,
   onChange,
-  onFile,
-  onRemoveFile
+  onFiles
 }: {
   field: FormField;
   value: unknown;
   files: UploadedFile[];
   error?: string;
   onChange: (value: unknown) => void;
-  onFile: (file: File) => void;
-  onRemoveFile: () => void;
+  onFiles: (files: UploadedFile[]) => void;
 }) {
   return (
     <div>
       <FieldLabel required={field.required}>{field.label}</FieldLabel>
       {field.description ? <p className="mb-3 text-sm leading-7 text-[var(--muted)]">{field.description}</p> : null}
-      {field.locked ? <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]"><LockKeyhole size={13} /> خيار مقفل من الإدارة</p> : null}
-      {field.type === "read_only" ? <div className="rounded-2xl border border-[var(--border)] bg-[#3f472d0d] px-4 py-3 font-bold">{String(value ?? "")}</div> : null}
-      {field.type === "short_text" || field.type === "phone" || field.type === "number" ? (
-        <TextInput type={field.type === "number" ? "number" : "text"} placeholder={field.placeholder} value={String(value ?? "")} disabled={field.locked} onChange={(event) => onChange(event.target.value)} />
+      {field.locked ? (
+        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
+          <LockKeyhole size={13} /> خيار مقفل من الإدارة
+        </p>
       ) : null}
-      {field.type === "long_text" ? <TextArea placeholder={field.placeholder} value={String(value ?? "")} disabled={field.locked} onChange={(event) => onChange(event.target.value)} /> : null}
+      {field.type === "read_only" ? <div className="rounded-2xl border border-[var(--border)] bg-[#3f472d0d] px-4 py-3 text-base font-bold">{String(value ?? "")}</div> : null}
+      {field.type === "short_text" || field.type === "phone" || field.type === "number" ? (
+        <TextInput
+          type={field.type === "number" ? "number" : "text"}
+          inputMode={field.type === "phone" ? "tel" : undefined}
+          placeholder={field.placeholder}
+          value={String(value ?? "")}
+          disabled={field.locked}
+          className="min-h-12 text-base"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : null}
+      {field.type === "long_text" ? (
+        <TextArea
+          placeholder={field.placeholder}
+          value={String(value ?? "")}
+          disabled={field.locked}
+          className="min-h-32 text-base"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : null}
       {field.type === "boolean" ? (
         <div className="grid grid-cols-2 gap-3">
           {[true, false].map((entry) => (
-            <button key={String(entry)} type="button" onClick={() => onChange(entry)} className={cn("rounded-2xl border p-4 font-bold", value === entry ? "border-[var(--olive)] bg-[#3f472d12]" : "border-[var(--border)] bg-white/70")}>{entry ? "نعم" : "لا"}</button>
+            <button
+              key={String(entry)}
+              type="button"
+              onClick={() => onChange(entry)}
+              className={cn(
+                "min-h-12 rounded-2xl border p-4 text-base font-bold",
+                value === entry ? "border-[var(--olive)] bg-[#3f472d12]" : "border-[var(--border)] bg-white/70"
+              )}
+            >
+              {entry ? "نعم" : "لا"}
+            </button>
           ))}
         </div>
       ) : null}
       {["radio", "select", "image_choice"].includes(field.type) && field.options ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 sm:grid-cols-2">
           {field.options.map((option) => {
             const optionChildren = option.children?.length ? option.children : [option];
             return optionChildren.map((child) => {
               const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
+              const selected = value === child.value;
+              const image = child.imageUrl || option.imageUrl;
               return (
-                <button key={child.id} type="button" disabled={field.locked} onClick={() => onChange(child.value)} className={cn("rounded-3xl border bg-white/70 p-4 text-right transition hover:border-[var(--olive)]", value === child.value ? "border-[var(--olive)] ring-4 ring-[#3f472d14]" : "border-[var(--border)]")}>
-                  <span className="font-black text-[var(--olive-dark)]">{label}</span>
-                  {child.description ? <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span> : null}
+                <button
+                  key={child.id}
+                  type="button"
+                  disabled={field.locked}
+                  onClick={() => onChange(child.value)}
+                  className={cn(
+                    "overflow-hidden rounded-3xl border bg-white text-right transition",
+                    selected ? "border-[var(--olive)] ring-4 ring-[#3f472d14]" : "border-[var(--border)]"
+                  )}
+                >
+                  {image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={image} alt="" className="aspect-[4/3] w-full object-cover" />
+                  ) : null}
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-base font-black text-[var(--olive-dark)]">{label}</span>
+                      <span className={cn("mt-1 h-5 w-5 rounded-full border-2", selected ? "border-[var(--olive)] bg-[var(--olive)]" : "border-[var(--border)]")} />
+                    </div>
+                    {child.description ? <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span> : null}
+                  </div>
                 </button>
               );
             });
@@ -237,34 +297,18 @@ function FieldRenderer({
         </div>
       ) : null}
       {["image_upload", "file_upload"].includes(field.type) ? (
-        <div className="rounded-3xl border border-dashed border-[var(--olive)] bg-white/55 p-5">
-          {files[0] ? (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                {files[0].previewUrl ? (
-                  // Blob previews are local-only and cannot be optimized by Next Image.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={files[0].previewUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" />
-                ) : (
-                  <ImagePlus />
-                )}
-                <div>
-                  <p className="font-bold">{files[0].originalName}</p>
-                  <p className="text-xs text-[var(--muted)]">{Math.round(files[0].size / 1024)} KB</p>
-                </div>
-              </div>
-              <button type="button" onClick={onRemoveFile} className="rounded-full bg-[#9d2f2f12] p-2 text-[var(--danger)]"><X size={18} /></button>
-            </div>
-          ) : (
-            <label className="grid cursor-pointer place-items-center gap-3 text-center">
-              <ImagePlus className="text-[var(--olive)]" />
-              <span className="font-bold">اضغط لاختيار صورة أو ملف من الهاتف</span>
-              <input type="file" accept={field.accept?.join(",")} className="hidden" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} />
-            </label>
-          )}
-        </div>
+        <MultipleImageUpload
+          fieldKey={field.key}
+          label={field.label}
+          accept={field.accept}
+          multiple={field.uploadMode === "multiple"}
+          maxFiles={field.uploadMode === "multiple" ? field.maxFiles ?? 5 : 1}
+          value={files}
+          onChange={onFiles}
+          error={error}
+        />
       ) : null}
-      {error ? <p className="mt-2 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
+      {error && !["image_upload", "file_upload"].includes(field.type) ? <p className="mt-2 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
     </div>
   );
 }
@@ -275,7 +319,9 @@ function ReviewStep({
   files,
   pending,
   onBack,
-  onSubmit
+  onSubmit,
+  onPreview,
+  error
 }: {
   sections: FormSection[];
   answers: Record<string, unknown>;
@@ -283,26 +329,50 @@ function ReviewStep({
   pending: boolean;
   onBack: () => void;
   onSubmit: () => void;
+  onPreview: (url: string) => void;
+  error?: string;
 }) {
   return (
-    <Card>
+    <Card className="!rounded-[1.5rem]">
       <h2 className="text-3xl font-black text-[var(--olive-dark)]">مراجعة طلبك</h2>
       <p className="mt-2 text-[var(--muted)]">تأكد من الاختيارات قبل إرسال الحجز النهائي.</p>
-      <div className="mt-8 grid gap-5">
+      <div className="mt-6 grid gap-4">
         {sections.map((section) => (
-          <div key={section.id} className="rounded-3xl bg-white/55 p-5">
-            <h3 className="mb-4 font-black text-[var(--olive)]">{section.title}</h3>
+          <div key={section.id} className="rounded-3xl bg-white/55 p-4">
+            <h3 className="mb-3 font-black text-[var(--olive)]">{section.title}</h3>
             <dl className="grid gap-3">
               {section.fields.filter((field) => fieldIsVisible(field, answers)).map((field) => (
-                <SummaryRow key={field.id} label={field.label} value={files[field.key]?.[0]?.originalName ?? optionLabel(field.options, answers[field.key])} />
+                <div key={field.id}>
+                  {["image_upload", "file_upload"].includes(field.type) ? (
+                    <div>
+                      <p className="mb-2 text-sm font-bold text-[var(--muted)]">{field.label}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(files[field.key] ?? []).map((file) => (
+                          <button key={file.path} type="button" onClick={() => onPreview(file.previewUrl ?? file.path)} className="overflow-hidden rounded-xl border border-[var(--border)]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={file.previewUrl ?? file.path} alt="" className="aspect-square w-full object-cover" />
+                          </button>
+                        ))}
+                        {!files[field.key]?.length ? <p className="text-sm text-[var(--muted)]">لا توجد صور</p> : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <SummaryRow label={field.label} value={optionLabel(field.options, answers[field.key])} />
+                  )}
+                </div>
               ))}
             </dl>
           </div>
         ))}
       </div>
-      <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-        <Button variant="secondary" onClick={onBack}>رجوع للتعديل</Button>
-        <Button disabled={pending} onClick={onSubmit}>{pending ? <Loader2 className="inline animate-spin" size={16} /> : null} تأكيد وإرسال الطلب</Button>
+      {error ? <p className="mt-4 rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
+      <div className="mt-6 grid gap-3">
+        <Button className="min-h-12 w-full" variant="secondary" onClick={onBack}>
+          رجوع للتعديل
+        </Button>
+        <Button className="min-h-12 w-full" disabled={pending} onClick={onSubmit}>
+          {pending ? <Loader2 className="inline animate-spin" size={16} /> : null} تأكيد وإرسال الطلب
+        </Button>
       </div>
     </Card>
   );
@@ -310,9 +380,9 @@ function ReviewStep({
 
 function SummaryRow({ label, value, ltr }: { label: string; value: unknown; ltr?: boolean }) {
   return (
-    <div className="grid gap-1 rounded-2xl border border-[var(--border)] bg-white/50 p-3 sm:grid-cols-[180px_1fr]">
+    <div className="rounded-2xl border border-[var(--border)] bg-white/50 p-3">
       <dt className="text-sm font-bold text-[var(--muted)]">{label}</dt>
-      <dd className={cn("font-black text-[var(--olive-dark)]", ltr && "ltr text-left")}>{String(value ?? "غير محدد")}</dd>
+      <dd className={cn("mt-1 text-base font-black text-[var(--olive-dark)]", ltr && "ltr text-left")}>{String(value ?? "غير محدد")}</dd>
     </div>
   );
 }

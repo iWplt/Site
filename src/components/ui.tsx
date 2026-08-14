@@ -91,7 +91,15 @@ export function TextArea(props: ComponentPropsWithoutRef<"textarea">) {
   );
 }
 
-export function Badge({ children, tone = "olive" }: { children: ReactNode; tone?: "olive" | "gold" | "red" | "green" }) {
+export function Badge({
+  children,
+  tone = "olive",
+  className
+}: {
+  children: ReactNode;
+  tone?: "olive" | "gold" | "red" | "green";
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -99,7 +107,8 @@ export function Badge({ children, tone = "olive" }: { children: ReactNode; tone?
         tone === "olive" && "bg-[#3f472d16] text-[var(--olive)]",
         tone === "gold" && "bg-[#b59a631f] text-[#836528]",
         tone === "red" && "bg-[#9d2f2f14] text-[var(--danger)]",
-        tone === "green" && "bg-[#386a3d16] text-[var(--success)]"
+        tone === "green" && "bg-[#386a3d16] text-[var(--success)]",
+        className
       )}
     >
       {children}

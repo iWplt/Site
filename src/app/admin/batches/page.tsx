@@ -1,11 +1,11 @@
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { listBatches, listStudents } from "@/lib/data";
+import { listBatches } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
 
 export default async function BatchesPage() {
   const user = await requireUser();
-  const [batches, students] = await Promise.all([listBatches(user), listStudents(user)]);
+  const batches = await listBatches(user);
 
   return (
     <div className="grid gap-6">
@@ -14,34 +14,35 @@ export default async function BatchesPage() {
           <p className="text-sm font-bold text-[var(--gold)]">Batch Management</p>
           <h1 className="text-4xl font-black text-[var(--olive-dark)]">إدارة الدفعات</h1>
         </div>
-        {user.role === "OWNER" ? <LinkButton href="/admin/batches/new">إنشاء دفعة</LinkButton> : null}
+        {user.role === "OWNER" ? <LinkButton href="/admin/batches/new">إنشاء دفعة جديدة</LinkButton> : null}
       </div>
-      <div className="grid gap-5">
-        {batches.map((batch) => {
-          const batchStudents = students.filter((student) => student.batch_id === batch.id);
-          const submitted = batchStudents.filter((student) => student.submission_status === "submitted").length;
-          return (
-            <Card key={batch.id}>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-2xl font-black text-[var(--olive-dark)]">{batch.name}</h2>
-                    <Badge>{statusLabels[batch.status]}</Badge>
-                  </div>
-                  <p className="mt-2 text-[var(--muted)]">{batch.university} / {batch.college} / {batch.department}</p>
+      <div className="grid gap-4">
+        {batches.map((batch) => (
+          <Card key={batch.id}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-2xl font-black text-[var(--olive-dark)]">{batch.name}</h2>
+                  <Badge>{statusLabels[batch.status]}</Badge>
                 </div>
-                <LinkButton href={`/admin/students?batch=${batch.id}`} variant="secondary">عرض الطلاب</LinkButton>
+                <p className="mt-2 text-[var(--muted)]">
+                  {batch.university} / {batch.college} / {batch.department}
+                </p>
+                <p className="mt-1 text-sm font-bold text-[var(--olive)]">الممثل: {batch.representative_name ?? "غير معيّن"}</p>
               </div>
-              <div className="mt-6 grid gap-3 sm:grid-cols-5">
-                <Stat label="المرحلة" value={batch.stage} />
-                <Stat label="سنة التخرج" value={batch.graduation_year} />
-                <Stat label="الطلاب" value={batchStudents.length} />
-                <Stat label="مرسل" value={submitted} />
-                <Stat label="لم يرسل" value={batchStudents.length - submitted} />
-              </div>
-            </Card>
-          );
-        })}
+              <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary">
+                فتح الدفعة
+              </LinkButton>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="الطلاب" value={batch.stats.total} />
+              <Stat label="حجز مكتمل" value={batch.stats.submitted} />
+              <Stat label="بانتظار الحجز" value={batch.stats.pending} />
+              <Stat label="سنة التخرج" value={batch.graduation_year} />
+            </div>
+          </Card>
+        ))}
+        {!batches.length ? <Card>لا توجد دفعات بعد.</Card> : null}
       </div>
     </div>
   );
