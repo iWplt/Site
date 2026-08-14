@@ -41,7 +41,7 @@ export async function verifyAccessCodeAction(_state: { error?: string } | undefi
         studentName: student.full_name,
         expiresAt: Date.now() + 1000 * 60 * 45
       }),
-      { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: `/f/${slug}` }
+      { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" }
     );
     redirect(`/f/${slug}/book`);
   }
@@ -104,7 +104,7 @@ export async function verifyAccessCodeAction(_state: { error?: string } | undefi
       studentName: student.full_name,
       expiresAt: Date.now() + 1000 * 60 * 45
     }),
-    { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: `/f/${slug}` }
+    { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" }
   );
 
   redirect(`/f/${slug}/book`);
