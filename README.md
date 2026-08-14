@@ -19,7 +19,11 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Without Supabase environment variables, the app runs in a local demo mode so the UI can be built and reviewed. With Supabase configured, privileged reads and mutations go through Supabase Auth, RLS policies, service-role route handlers, signed storage uploads, and database RPCs.
+Without Supabase environment variables, the app runs in an **explicit local demo fallback** (`.data/warka-db.json`) so UI and workflows can be reviewed. This is NOT production.
+
+With Supabase configured, privileged reads and mutations must go through Supabase Auth, RLS policies, service-role route handlers, signed storage uploads, and database RPCs.
+
+On Vercel production (`VERCEL_ENV=production`), missing Supabase config fails loudly unless `WARKA_ALLOW_LOCAL_DEMO=true` is set intentionally.
 
 ## Supabase setup
 
