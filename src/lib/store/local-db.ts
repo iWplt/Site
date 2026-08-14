@@ -12,7 +12,8 @@ import type {
   BookingFormRecord,
   FormStatus,
   OrderStatus,
-  Role
+  Role,
+  StudentWithState
 } from "@/lib/types";
 
 export type Representative = {
@@ -499,7 +500,43 @@ export function createBatchRecord(db: LocalDatabase, input: CreateBatchInput, ac
     representative.batch_ids.push(batch.id);
     representative.updated_at = created;
   }
-  audit(db, "BATCH_CREATED", "batch", batch.id, { id: actorId, label: "owner" }, { name: batch.name });
+
+  // Auto-create a draft batch form so students can receive access codes after import.
+  let slugBase = batch.name
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0600-\u06FF]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  if (!/^[a-z0-9-]/.test(slugBase)) slugBase = `batch-${batch.graduation_year}`;
+  let slug = `${slugBase || "batch"}-${batch.graduation_year}`;
+  let counter = 1;
+  while (db.forms.some((form) => form.slug === slug)) {
+    slug = `${slugBase || "batch"}-${batch.graduation_year}-${counter++}`;
+  }
+  db.forms.unshift({
+    id: randomUUID(),
+    name: `بطاقة حجز ${batch.name}`,
+    internal_description: `نموذج تلقائي للدفعة ${batch.name}`,
+    slug,
+    type: "BATCH",
+    status: "published",
+    batch_id: batch.id,
+    definition: {
+      ...defaultWarkaFormDefinition,
+      sections: defaultWarkaFormDefinition.sections.map((section) => ({
+        ...section,
+        fields: section.fields.map((field) => {
+          if (["robe_addition_image", "sash_back_image", "year_side_image", "cap_side_image", "cap_top_image"].includes(field.key)) {
+            return { ...field, uploadMode: "multiple" as const, maxFiles: 5, maxSizeMb: 8 };
+          }
+          return field;
+        })
+      }))
+    }
+  });
+
+  audit(db, "BATCH_CREATED", "batch", batch.id, { id: actorId, label: "owner" }, { name: batch.name, form_slug: slug });
   return batch;
 }
 

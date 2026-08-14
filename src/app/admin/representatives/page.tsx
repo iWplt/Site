@@ -1,4 +1,5 @@
 import { toggleRepresentativeAction } from "@/app/actions";
+import { AssignBatchesForm } from "@/components/assign-batches-form";
 import { CreateRepresentativeForm } from "@/components/create-representative-form";
 import { Badge, Button, Card } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -13,14 +14,15 @@ export default async function RepresentativesPage() {
       <div>
         <p className="text-sm font-bold text-[var(--gold)]">Representatives</p>
         <h1 className="text-4xl font-black text-[var(--olive-dark)]">الممثلون</h1>
+        <p className="mt-2 text-[var(--muted)]">لا يوجد تسجيل عام. المالك ينشئ الحساب ويعين الدفعات فقط.</p>
       </div>
       <CreateRepresentativeForm batches={batches.map((batch) => ({ id: batch.id, name: batch.name }))} />
       <div className="grid gap-4">
         {reps.map((rep) => (
           <Card key={rep.id}>
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-3">
                   <h2 className="text-2xl font-black text-[var(--olive-dark)]">{rep.full_name}</h2>
                   <Badge tone={rep.disabled ? "red" : "green"}>{rep.disabled ? "معطل" : "فعال"}</Badge>
                 </div>
@@ -34,6 +36,11 @@ export default async function RepresentativesPage() {
                     .filter(Boolean)
                     .join("، ") || "لا توجد"}
                 </p>
+                <AssignBatchesForm
+                  representativeId={rep.id}
+                  selected={rep.batch_ids}
+                  batches={batches.map((batch) => ({ id: batch.id, name: batch.name }))}
+                />
               </div>
               <form
                 action={async () => {
@@ -41,7 +48,7 @@ export default async function RepresentativesPage() {
                   await toggleRepresentativeAction(rep.id, !rep.disabled);
                 }}
               >
-                <Button type="submit" variant="secondary">
+                <Button type="submit" variant="secondary" className="min-h-12">
                   {rep.disabled ? "تفعيل الحساب" : "تعطيل الحساب"}
                 </Button>
               </form>

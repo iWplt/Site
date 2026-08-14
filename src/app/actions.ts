@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE, requireUser, type AppUser } from "@/lib/auth";
-import { previewExcelNames, previewPastedNames, analyzeWorkbook } from "@/lib/imports";
+import { previewPastedNames, analyzeWorkbook } from "@/lib/imports";
 import {
   assertBatchAccess,
   audit,
@@ -416,7 +416,14 @@ export async function analyzeExcelAction(formData: FormData) {
 }
 
 export async function importExcelColumnAction(batchId: string, rows: Record<string, unknown>[], columnKey: string) {
-  const preview = previewExcelNames(rows, columnKey);
+  const user = await requireUser();
+  const db = readDb();
+  assertBatchAccess(db, user, batchId);
+  const existing = db.students.filter((student) => student.batch_id === batchId).map((student) => student.full_name);
+  const values = rows.map((row) => (row[columnKey] == null ? "" : String(row[columnKey])));
+  const maybeHeader = values[0]?.trim();
+  const body = maybeHeader && /اسم|name|الطالب/i.test(maybeHeader) ? values.slice(1) : values;
+  const preview = previewPastedNames(body.join("\n"), existing);
   const names = preview.filter((row) => row.valid).map((row) => row.normalizedName);
   return importStudentsAction(batchId, names);
 }
@@ -467,10 +474,12 @@ export async function setAccessCodeStatusAction(studentId: string, status: Acces
 
 export async function reopenSubmissionAction(submissionId: string) {
   const user = await requireUser(["OWNER"]);
-  mutateDb((db) => {
+  const newCode = mutateDb((db) => {
     const submission = db.submissions.find((entry) => entry.id === submissionId);
     if (!submission) throw new Error("الطلب غير موجود.");
+    const oldStatus = submission.status;
     submission.is_current = false;
+    submission.status = "CANCELLED";
     const student = db.students.find((entry) => entry.id === submission.student_id);
     if (!student) throw new Error("الطالب غير موجود.");
     const form = db.forms.find((entry) => entry.id === submission.form_id);
@@ -482,17 +491,21 @@ export async function reopenSubmissionAction(submissionId: string) {
     db.status_history.push({
       id: randomUUID(),
       submission_id: submission.id,
-      old_status: submission.status,
+      old_status: oldStatus,
       new_status: "CANCELLED",
       changed_by: user.id,
       changed_at: new Date().toISOString(),
       notes: "تمت إعادة فتح الطلب من المالك"
     });
     audit(db, "SUBMISSION_REOPENED", "submission", submission.id, { id: user.id, label: user.fullName }, {
-      new_code_id: created.id
+      new_code_id: created.id,
+      new_code: created.code,
+      reopened_from: submission.id
     });
+    return created.code;
   });
   revalidateAdmin();
+  return { code: newCode };
 }
 
 export async function updateOrderStatusAction(submissionId: string, status: OrderStatus, notes?: string) {
@@ -565,6 +578,35 @@ export async function setFormStatusAction(formId: string, status: FormStatus) {
   revalidateAdmin();
 }
 
+export async function updateFormUploadSettingsAction(
+  formId: string,
+  updates: Array<{ key: string; uploadMode?: "single" | "multiple"; maxFiles?: number; required?: boolean }>
+) {
+  await requireUser(["OWNER"]);
+  mutateDb((db) => {
+    const form = db.forms.find((entry) => entry.id === formId);
+    if (!form) throw new Error("النموذج غير موجود.");
+    form.definition = {
+      ...form.definition,
+      sections: form.definition.sections.map((section) => ({
+        ...section,
+        fields: section.fields.map((field) => {
+          const update = updates.find((entry) => entry.key === field.key);
+          if (!update) return field;
+          return {
+            ...field,
+            uploadMode: update.uploadMode,
+            maxFiles: update.maxFiles,
+            required: update.required
+          };
+        })
+      }))
+    };
+    audit(db, "FORM_UPLOAD_SETTINGS_UPDATED", "booking_form", formId, { label: "owner" });
+  });
+  revalidateAdmin();
+}
+
 export async function duplicateFormAction(formId: string) {
   await requireUser(["OWNER"]);
   mutateDb((db) => {
@@ -588,6 +630,31 @@ export async function getStudentCardAction(studentId: string) {
   if (!student) throw new Error("الطالب غير موجود.");
   assertBatchAccess(db, user, student.batch_id);
   return toStudentWithState(db, studentId);
+}
+
+export async function exportBatchStudentsCsvAction(batchId: string) {
+  const user = await requireUser();
+  const db = readDb();
+  assertBatchAccess(db, user, batchId);
+  const rows = db.students
+    .filter((student) => student.batch_id === batchId)
+    .map((student) => {
+      const state = toStudentWithState(db, student.id);
+      return [
+        state?.full_name ?? "",
+        state?.phone ?? "",
+        state?.code ?? "",
+        state?.code_status ?? "",
+        state?.submission_status ?? "",
+        state?.booking_number ?? ""
+      ]
+        .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+        .join(",");
+    });
+  return {
+    filename: `students-${batchId}.csv`,
+    csv: ["الاسم,الهاتف,الرمز,حالة الرمز,الحجز,رقم الحجز", ...rows].join("\n")
+  };
 }
 
 export async function ensureDevOwnerSession() {

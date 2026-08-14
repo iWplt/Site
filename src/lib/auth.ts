@@ -31,11 +31,24 @@ export async function getCurrentUser(): Promise<AppUser | null> {
       .eq("id", user.id)
       .maybeSingle();
     if (!profile || profile.disabled) return null;
+
+    let batchIds: string[] | undefined;
+    if (profile.role === "REPRESENTATIVE") {
+      const { data: links } = await supabase
+        .from("representative_batches")
+        .select("batch_id")
+        .eq("representative_id", profile.id);
+      const linked = links?.map((row) => row.batch_id) ?? [];
+      const { data: owned } = await supabase.from("batches").select("id").eq("representative_id", profile.id);
+      batchIds = Array.from(new Set([...linked, ...(owned?.map((row) => row.id) ?? [])]));
+    }
+
     return {
       id: profile.id,
       email: user.email ?? undefined,
       role: profile.role,
-      fullName: profile.full_name
+      fullName: profile.full_name,
+      batchIds
     };
   }
 
@@ -71,6 +84,7 @@ export async function requireUser(roles?: Role[]) {
 export async function canAccessBatch(user: AppUser, batchId: string) {
   if (user.role === "OWNER") return true;
   if (user.batchIds?.includes(batchId)) return true;
+  if (hasSupabaseConfig()) return false;
   const db = readDb();
   const profile = db.profiles.find((entry) => entry.id === user.id);
   return Boolean(profile?.batch_ids.includes(batchId));

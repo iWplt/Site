@@ -1,5 +1,6 @@
 import { duplicateFormAction, setFormStatusAction } from "@/app/actions";
 import { CreateFormPanel } from "@/components/create-form-panel";
+import { FormUploadSettings } from "@/components/form-upload-settings";
 import { Badge, Button, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { listBatches, listForms } from "@/lib/data";
@@ -22,6 +23,17 @@ export default async function FormsPage() {
         {forms.map((form) => {
           const batch = batches.find((entry) => entry.id === form.batch_id);
           const fields = form.definition.sections.reduce((count, section) => count + section.fields.length, 0);
+          const uploadFields = form.definition.sections
+            .flatMap((section) => section.fields)
+            .filter((field) => ["image_upload", "file_upload"].includes(field.type))
+            .map((field) => ({
+              key: field.key,
+              label: field.label,
+              type: field.type,
+              uploadMode: field.uploadMode,
+              maxFiles: field.maxFiles,
+              required: field.required
+            }));
           return (
             <Card key={form.id}>
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -66,6 +78,7 @@ export default async function FormsPage() {
                   </form>
                 </div>
               ) : null}
+              {user.role === "OWNER" ? <FormUploadSettings formId={form.id} fields={uploadFields} /> : null}
             </Card>
           );
         })}

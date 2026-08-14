@@ -2,8 +2,8 @@ import "server-only";
 
 import type { AppUser } from "@/lib/auth";
 import { canAccessBatch } from "@/lib/auth";
-import { hasSupabaseConfig } from "@/lib/env";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
+import { assertPersistenceAllowed, getPersistenceMode } from "@/lib/persistence";
 import {
   getBatchStats,
   readDb,
@@ -17,10 +17,17 @@ import type { Batch, BatchStats, BookingFormRecord, StudentWithState, Submission
 export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormRecord | null };
 
 function ensureLocal() {
-  if (hasSupabaseConfig()) {
-    throw new Error("Supabase mode is configured; use Supabase data adapters.");
+  const mode = assertPersistenceAllowed();
+  if (mode === "supabase") {
+    throw new Error(
+      "Supabase is configured as the source of truth, but this Cloud Agent environment has no complete Supabase write adapters wired for this read path yet. Configure service role + applied migrations, or unset Supabase env vars to use the explicit local demo fallback."
+    );
   }
   return readDb();
+}
+
+export function getActivePersistenceMode() {
+  return getPersistenceMode();
 }
 
 export async function listBatches(user: AppUser): Promise<BatchWithStats[]> {
