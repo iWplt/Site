@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+
+# Local SQLite database files (runtime state, not source)
+data/
+*.sqlite
+*.sqlite3
+*.db
