@@ -39,7 +39,11 @@ export type FormOption = {
   label: string;
   value: string;
   description?: string;
+  /** Resolved display URL (signed Storage URL or local /warka/... path). */
   imageUrl?: string;
+  /** Durable Supabase Storage path / local relative path for Owner reference image. */
+  imagePath?: string;
+  imageAlt?: string;
   enabled?: boolean;
   children?: FormOption[];
 };
@@ -53,6 +57,8 @@ export type FormField = {
   description?: string;
   placeholder?: string;
   options?: FormOption[];
+  /** When true, choice fields render Owner option reference images (or placeholders). */
+  showOptionImages?: boolean;
   defaultValue?: unknown;
   locked?: boolean;
   accept?: string[];

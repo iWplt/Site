@@ -1,11 +1,11 @@
 import "server-only";
 
-import { hasSupabaseConfig } from "@/lib/env";
+import { hasSupabaseConfig, isProductionRuntime, validateRuntimeEnvironment } from "@/lib/env";
 
 /**
- * Production source of truth is Supabase.
- * Local JSON DB is an explicit development/demo fallback ONLY when
- * NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are absent.
+ * Production source of truth is Supabase PostgreSQL + Auth + Storage.
+ * Local JSON DB (.data/warka-db.json) is allowed ONLY in development / explicit automated tests.
+ * In production, local/demo persistence is impossible — even if WARKA_ALLOW_LOCAL_DEMO=true.
  */
 export type PersistenceMode = "supabase" | "local-demo";
 
@@ -14,22 +14,44 @@ export function getPersistenceMode(): PersistenceMode {
   return "local-demo";
 }
 
-export function assertPersistenceAllowed() {
-  const mode = getPersistenceMode();
-  // Use Vercel production signal, not NODE_ENV, so `next build` can still prerender
-  // local-demo routes in CI without Supabase credentials.
-  const isVercelProduction = process.env.VERCEL_ENV === "production";
-  const forceDemo = process.env.WARKA_ALLOW_LOCAL_DEMO === "true";
+export function assertPersistenceAllowed(): PersistenceMode {
+  const validation = validateRuntimeEnvironment();
+  if (!validation.ok) {
+    throw new Error(validation.error);
+  }
 
-  if (isVercelProduction && mode === "local-demo" && !forceDemo) {
-    throw new Error(
-      "WARKA production requires Supabase. Configure NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY."
-    );
+  const mode = getPersistenceMode();
+
+  if (isProductionRuntime()) {
+    if (mode !== "supabase") {
+      throw new Error(
+        "WARKA production forbids local/demo persistence. Configure Supabase or the deployment will not start."
+      );
+    }
+    // Explicitly ignore WARKA_ALLOW_LOCAL_DEMO in production.
+    if (process.env.WARKA_ALLOW_LOCAL_DEMO === "true") {
+      console.warn(
+        "[WARKA] WARKA_ALLOW_LOCAL_DEMO=true is ignored in production. Supabase remains mandatory."
+      );
+    }
+    return "supabase";
   }
 
   return mode;
 }
 
+export function assertLocalDemoAllowed() {
+  const mode = assertPersistenceAllowed();
+  if (mode !== "local-demo") {
+    throw new Error("Local demo persistence is not available while Supabase is configured.");
+  }
+  if (isProductionRuntime()) {
+    throw new Error("Local demo persistence is forbidden in production.");
+  }
+}
+
 export function persistenceLabel(mode: PersistenceMode = getPersistenceMode()) {
-  return mode === "supabase" ? "Supabase (production source of truth)" : "Local demo fallback (.data/warka-db.json)";
+  return mode === "supabase"
+    ? "Supabase (production source of truth)"
+    : "Local demo fallback (.data/warka-db.json) — development only";
 }

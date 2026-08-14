@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import { AccessCodeForm } from "@/components/access-code-form";
 import { Card, LogoMark } from "@/components/ui";
 import { getPublicForm } from "@/lib/data";
@@ -14,21 +15,22 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
         <section className="flex-1">
           <LogoMark />
           <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-[var(--border)] shadow-[var(--shadow)] sm:rounded-[2rem]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/warka/brand-hero.webp" alt="WARKA" className="aspect-[16/10] w-full object-cover" />
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/warka/robe-gulf.webp" alt="" className="aspect-square rounded-2xl object-cover" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/warka/sash-royal-triangle.webp" alt="" className="aspect-square rounded-2xl object-cover" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/warka/cap-royal.webp" alt="" className="aspect-square rounded-2xl object-cover" />
+            <Image
+              src="/warka/brand-hero.webp"
+              alt="WARKA — زي التخرج"
+              width={960}
+              height={600}
+              priority
+              className="aspect-[16/10] w-full object-cover object-[center_28%] sm:object-[center_32%]"
+              sizes="(max-width: 1024px) 100vw, 56vw"
+            />
           </div>
           <p className="mt-5 text-sm font-bold text-[var(--gold)]">بطاقة الحجز الرسمية</p>
-          <h1 className="mt-2 max-w-2xl text-[1.85rem] font-black leading-[1.45] text-[var(--olive-dark)] sm:text-5xl">{form.name}</h1>
+          <h1 className="mt-2 max-w-2xl text-[1.85rem] font-black leading-[1.45] text-[var(--olive-dark)] sm:text-5xl">
+            {form.name}
+          </h1>
           <p className="mt-3 max-w-xl text-base leading-8 text-[var(--muted)]">
-            تجربة رقمية مستوحاة من بطاقة WARKA الأصلية، مصممة أولاً للهاتف مع حفظ الرمز والطلب بشكل آمن.
+            أدخل رمز الحجز الخاص بك للمتابعة إلى اختيار الروب والوشاح والقبعة وإرفاق التصاميم المطلوبة.
           </p>
         </section>
         <Card className="flex-1 !rounded-[1.5rem] !p-4 sm:!rounded-[1.75rem] sm:!p-7">

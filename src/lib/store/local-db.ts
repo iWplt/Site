@@ -193,7 +193,7 @@ function seed(): LocalDatabase {
   };
 
   const db: LocalDatabase = {
-    version: 2,
+    version: 3,
     profiles: [
       {
         id: ownerId,
@@ -356,7 +356,7 @@ export function readDb(): LocalDatabase {
     return seeded;
   }
   const parsed = JSON.parse(readFileSync(DB_PATH, "utf8")) as LocalDatabase;
-  if (!parsed.version || parsed.version < 2) {
+  if (!parsed.version || parsed.version < 3) {
     const seeded = seed();
     writeDb(seeded);
     return seeded;

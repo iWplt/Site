@@ -17,8 +17,8 @@ export default async function SettingsPage() {
         <h2 className="text-2xl font-black text-[var(--olive-dark)]">مصدر البيانات</h2>
         <p className="mt-3 rounded-2xl bg-white/60 p-4 font-bold text-[var(--olive)]">{persistenceLabel(mode)}</p>
         <p className="mt-3 leading-8 text-[var(--muted)]">
-          في الإنتاج على Vercel يجب ضبط متغيرات Supabase. لن يعمل التطبيق بوضع العرض المحلي في الإنتاج إلا إذا تم تعيين
-          `WARKA_ALLOW_LOCAL_DEMO=true` عمداً.
+          في الإنتاج يجب ضبط متغيرات Supabase. التخزين المحلي (`.data/warka-db.json`) ممنوع تماماً في الإنتاج حتى لو تم تعيين
+          `WARKA_ALLOW_LOCAL_DEMO=true`.
         </p>
       </Card>
       <Card>
@@ -27,10 +27,11 @@ export default async function SettingsPage() {
           {[
             "Supabase Auth لتسجيل دخول المالك والممثلين بدون تسجيل عام",
             "PostgreSQL + RLS لعزل الدفعات",
-            "Supabase Storage مع روابط رفع موقعة",
+            "Supabase Storage الخاص: booking-uploads + form-options",
+            "صور خيارات المنتجات (Owner) منفصلة عن مرفقات تصميم الطالب",
             "تشفير رموز الحجز القابلة للاسترجاع Server-side",
             "RPC للمعاملة الذرية عند إرسال الطلب + submission_files",
-            "Vercel environment variables بدون كشف مفاتيح الخدمة"
+            "متغيرات البيئة بدون كشف مفتاح الخدمة للمتصفح"
           ].map((item) => (
             <p key={item} className="rounded-2xl bg-white/60 p-3 font-bold text-[var(--olive)]">
               {item}

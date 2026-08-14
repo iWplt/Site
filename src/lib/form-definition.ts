@@ -99,13 +99,15 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "موديل الروب",
           type: "image_choice",
           required: true,
+          showOptionImages: true,
           options: robeOptions
         },
         {
           id: "robe_addition",
           key: "robe_addition",
           label: "إضافات الروب",
-          type: "radio",
+          type: "image_choice",
+          showOptionImages: true,
           options: [
             { id: "none", label: "بدون إضافة", value: "none" },
             { id: "one-sleeve", label: "تطريز ردن واحدة", value: "one_sleeve" },
@@ -137,6 +139,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "نوع الوشاح",
           type: "image_choice",
           required: true,
+          showOptionImages: true,
           options: sashOptions
         },
         {
@@ -207,6 +210,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "نوع القبعة",
           type: "image_choice",
           required: true,
+          showOptionImages: true,
           options: capOptions
         },
         {

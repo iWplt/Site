@@ -261,39 +261,68 @@ function FieldRenderer({
         </div>
       ) : null}
       {["radio", "select", "image_choice"].includes(field.type) && field.options ? (
-        <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 sm:grid-cols-2">
-          {field.options.map((option) => {
-            const optionChildren = option.children?.length ? option.children : [option];
-            return optionChildren.map((child) => {
-              const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
-              const selected = value === child.value;
-              const image = child.imageUrl || option.imageUrl;
-              return (
-                <button
-                  key={child.id}
-                  type="button"
-                  disabled={field.locked}
-                  onClick={() => onChange(child.value)}
-                  className={cn(
-                    "overflow-hidden rounded-3xl border bg-white text-right transition",
-                    selected ? "border-[var(--olive)] ring-4 ring-[#3f472d14]" : "border-[var(--border)]"
-                  )}
-                >
-                  {image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={image} alt="" className="aspect-[4/3] w-full object-cover" />
-                  ) : null}
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-base font-black text-[var(--olive-dark)]">{label}</span>
-                      <span className={cn("mt-1 h-5 w-5 rounded-full border-2", selected ? "border-[var(--olive)] bg-[var(--olive)]" : "border-[var(--border)]")} />
-                    </div>
-                    {child.description ? <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span> : null}
-                  </div>
-                </button>
+        <div
+          className={cn(
+            "grid gap-3",
+            field.showOptionImages || field.type === "image_choice" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
+          )}
+        >
+          {field.options
+            .filter((option) => option.enabled !== false)
+            .flatMap((option) => {
+              const optionChildren = (option.children?.length ? option.children : [option]).filter(
+                (child) => child.enabled !== false
               );
-            });
-          })}
+              return optionChildren.map((child) => {
+                const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
+                const selected = value === child.value;
+                const showImages = Boolean(field.showOptionImages || field.type === "image_choice");
+                const image = child.imageUrl || option.imageUrl;
+                return (
+                  <button
+                    key={child.id}
+                    type="button"
+                    disabled={field.locked}
+                    aria-pressed={selected}
+                    onClick={() => onChange(child.value)}
+                    className={cn(
+                      "overflow-hidden rounded-3xl border bg-white text-right transition",
+                      selected ? "border-[var(--olive)] ring-4 ring-[#3f472d14]" : "border-[var(--border)]",
+                      field.locked && "opacity-90"
+                    )}
+                  >
+                    {showImages ? (
+                      image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={image}
+                          alt={child.imageAlt || label}
+                          className="aspect-[4/3] w-full bg-[#3f472d08] object-contain p-2"
+                        />
+                      ) : (
+                        <div className="grid aspect-[4/3] place-items-center bg-[#3f472d08] px-4 text-center text-sm font-bold text-[var(--muted)]">
+                          لم تتم إضافة صورة
+                        </div>
+                      )
+                    ) : null}
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-base font-black text-[var(--olive-dark)]">{label}</span>
+                        <span
+                          className={cn(
+                            "mt-1 h-5 w-5 shrink-0 rounded-full border-2",
+                            selected ? "border-[var(--olive)] bg-[var(--olive)]" : "border-[var(--border)]"
+                          )}
+                        />
+                      </div>
+                      {child.description ? (
+                        <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              });
+            })}
         </div>
       ) : null}
       {["image_upload", "file_upload"].includes(field.type) ? (

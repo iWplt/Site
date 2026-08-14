@@ -12,6 +12,19 @@ import {
   type SubmissionFile,
   type SubmissionRecord
 } from "@/lib/store/local-db";
+import {
+  sbGetBatch,
+  sbGetDashboardMetrics,
+  sbGetPublicForm,
+  sbGetSubmissionDetail,
+  sbListAuditLogs,
+  sbListBatches,
+  sbListForms,
+  sbListRepresentatives,
+  sbListStudents,
+  sbListSubmissions,
+  type SubmissionDetail
+} from "@/lib/store/supabase-db";
 import type { Batch, BatchStats, BookingFormRecord, StudentWithState, SubmissionSummary } from "@/lib/types";
 
 export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormRecord | null };
@@ -19,18 +32,18 @@ export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormReco
 function ensureLocal() {
   const mode = assertPersistenceAllowed();
   if (mode === "supabase") {
-    throw new Error(
-      "Supabase is configured as the source of truth, but this Cloud Agent environment has no complete Supabase write adapters wired for this read path yet. Configure service role + applied migrations, or unset Supabase env vars to use the explicit local demo fallback."
-    );
+    throw new Error("Internal error: local DB accessed while Supabase mode is active.");
   }
   return readDb();
 }
 
 export function getActivePersistenceMode() {
-  return getPersistenceMode();
+  return assertPersistenceAllowed();
 }
 
 export async function listBatches(user: AppUser): Promise<BatchWithStats[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListBatches(user);
+
   const db = ensureLocal();
   const batches = db.batches.filter((batch) => {
     if (user.role === "OWNER") return true;
@@ -44,6 +57,8 @@ export async function listBatches(user: AppUser): Promise<BatchWithStats[]> {
 }
 
 export async function getBatch(user: AppUser, batchId: string): Promise<BatchWithStats | null> {
+  if (assertPersistenceAllowed() === "supabase") return sbGetBatch(user, batchId);
+
   const db = ensureLocal();
   if (!(await canAccessBatch(user, batchId))) return null;
   const batch = db.batches.find((entry) => entry.id === batchId);
@@ -59,6 +74,8 @@ export async function listStudents(
   user: AppUser,
   options?: { batchId?: string; search?: string }
 ): Promise<StudentWithState[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListStudents(user, options);
+
   const db = ensureLocal();
   let students = db.students;
 
@@ -85,6 +102,8 @@ export async function listStudents(
 }
 
 export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListForms(user);
+
   const db = ensureLocal();
   return db.forms
     .filter((form) => {
@@ -99,6 +118,8 @@ export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
 }
 
 export async function getPublicForm(slug: string): Promise<BookingFormRecord | null> {
+  if (assertPersistenceAllowed() === "supabase") return sbGetPublicForm(slug);
+
   const db = ensureLocal();
   const form = db.forms.find((entry) => entry.slug === slug && entry.status === "published");
   if (!form) return null;
@@ -109,6 +130,8 @@ export async function listSubmissions(
   user: AppUser,
   options?: { batchId?: string }
 ): Promise<SubmissionSummary[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListSubmissions(user, options);
+
   const db = ensureLocal();
   return db.submissions
     .filter((submission) => {
@@ -134,7 +157,9 @@ export async function listSubmissions(
     });
 }
 
-export async function getSubmissionDetail(user: AppUser, submissionId: string) {
+export async function getSubmissionDetail(user: AppUser, submissionId: string): Promise<SubmissionDetail | null> {
+  if (assertPersistenceAllowed() === "supabase") return sbGetSubmissionDetail(user, submissionId);
+
   const db = ensureLocal();
   const submission = db.submissions.find((entry) => entry.id === submissionId);
   if (!submission) return null;
@@ -148,16 +173,19 @@ export async function getSubmissionDetail(user: AppUser, submissionId: string) {
 }
 
 export async function listRepresentatives(): Promise<Representative[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListRepresentatives();
   const db = ensureLocal();
   return db.profiles.filter((profile) => profile.role === "REPRESENTATIVE");
 }
 
 export async function listAuditLogs() {
+  if (assertPersistenceAllowed() === "supabase") return sbListAuditLogs();
   const db = ensureLocal();
   return db.audit_logs.slice(0, 100);
 }
 
 export async function getDashboardMetrics(user: AppUser) {
+  if (assertPersistenceAllowed() === "supabase") return sbGetDashboardMetrics(user);
   const batches = await listBatches(user);
   const students = await listStudents(user);
   const submissions = await listSubmissions(user);
@@ -171,4 +199,5 @@ export async function getDashboardMetrics(user: AppUser) {
   };
 }
 
-export type { SubmissionFile, SubmissionRecord };
+export type { SubmissionFile, SubmissionRecord, SubmissionDetail };
+export { getPersistenceMode };
