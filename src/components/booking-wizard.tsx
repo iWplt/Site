@@ -241,7 +241,13 @@ function FieldRenderer({
           {files[0] ? (
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                {files[0].previewUrl ? <img src={files[0].previewUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <ImagePlus />}
+                {files[0].previewUrl ? (
+                  // Blob previews are local-only and cannot be optimized by Next Image.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={files[0].previewUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" />
+                ) : (
+                  <ImagePlus />
+                )}
                 <div>
                   <p className="font-bold">{files[0].originalName}</p>
                   <p className="text-xs text-[var(--muted)]">{Math.round(files[0].size / 1024)} KB</p>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { demoForm, demoStudents } from "@/lib/demo-data";
+import { demoStudents } from "@/lib/demo-data";
 import { getPublicForm } from "@/lib/data";
 import { hasSupabaseConfig } from "@/lib/env";
 import { verifyBookingSession } from "@/lib/security";
