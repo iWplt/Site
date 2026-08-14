@@ -452,7 +452,7 @@ export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormReco
 
 export async function sbListBatches(user: AppUser): Promise<BatchWithStats[]> {
   const admin = createAdminClient();
-  const builder = admin.from("batches").select("*, representative:profiles(full_name)").order("created_at", {
+  const builder = admin.from("batches").select("*, representative:profiles!representative_id(full_name)").order("created_at", {
     ascending: false
   });
 
@@ -483,7 +483,7 @@ export async function sbGetBatch(user: AppUser, batchId: string): Promise<BatchW
 
   const { data, error } = await admin
     .from("batches")
-    .select("*, representative:profiles(full_name)")
+    .select("*, representative:profiles!representative_id(full_name)")
     .eq("id", batchId)
     .maybeSingle();
   if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل الدفعة."));
@@ -644,7 +644,7 @@ export async function sbGetSubmissionDetail(user: AppUser, submissionId: string)
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("submissions")
-    .select("*, form:booking_forms(*), batch:batches(*, representative:profiles(full_name))")
+    .select("*, form:booking_forms(*), batch:batches(*, representative:profiles!representative_id(full_name))")
     .eq("id", submissionId)
     .maybeSingle();
   if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل الطلب."));
@@ -918,7 +918,7 @@ export async function sbCreateBatch(user: AppUser, input: CreateBatchInput): Pro
       representative_id: input.representative_id ?? null,
       status: input.status
     })
-    .select("*, representative:profiles(full_name)")
+    .select("*, representative:profiles!representative_id(full_name)")
     .single();
   if (error || !batchRow) throw new Error(pgErrorMessage(error, "تعذر إنشاء الدفعة."));
 
