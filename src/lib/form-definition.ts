@@ -48,7 +48,7 @@ const imageUploadDefaults: Pick<FormField, "accept" | "maxSizeMb"> = {
 
 export const defaultWarkaFormDefinition: FormDefinition = {
   id: "warka-default-graduation-form",
-  version: 1,
+  version: 2,
   name: "بطاقة حجز WARKA الافتراضية",
   type: "BATCH",
   sections: [
@@ -66,7 +66,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           locked: true,
           description: "يتم عرض الاسم من رمز الحجز ولا يمكن تعديله في نموذج الدفعات."
         },
-        { id: "address", key: "address", label: "العنوان", type: "short_text", required: true },
+        { id: "address", key: "address", label: "العنوان", type: "short_text", required: true, placeholder: "المدينة / المنطقة / أقرب نقطة دالة" },
         {
           id: "phone",
           key: "phone",
@@ -74,7 +74,14 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           type: "phone",
           required: true,
           placeholder: "07xx xxx xxxx"
-        },
+        }
+      ]
+    },
+    {
+      id: "booking",
+      title: "نوع الحجز",
+      description: "اختر إن كان الطلب زياً كاملاً أو قطعاً منفردة.",
+      fields: [
         {
           id: "booking_type",
           key: "booking_type",
@@ -83,8 +90,8 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           defaultValue: "full_set",
           options: [
-            { id: "full-set", label: "زي كامل", value: "full_set" },
-            { id: "single-pieces", label: "قطع منفردة", value: "single_pieces" }
+            { id: "full-set", label: "زي كامل", value: "full_set", description: "روب + وشاح + قبعة." },
+            { id: "single-pieces", label: "قطع منفردة", value: "single_pieces", description: "طلب قطعة أو أكثر حسب الاختيار." }
           ]
         }
       ]
@@ -92,6 +99,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
     {
       id: "robe",
       title: "الروب",
+      description: "اختر موديل الروب من الصور المرجعية المعتمدة.",
       fields: [
         {
           id: "robe_model",
@@ -101,7 +109,14 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           showOptionImages: true,
           options: robeOptions
-        },
+        }
+      ]
+    },
+    {
+      id: "robe_additions",
+      title: "إضافات الروب",
+      description: "إضافات اختيارية على الردن. صورة الخيار مرجع من الإدارة وليست صورة الطالب.",
+      fields: [
         {
           id: "robe_addition",
           key: "robe_addition",
@@ -109,29 +124,20 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           type: "image_choice",
           showOptionImages: true,
           options: [
-            { id: "none", label: "بدون إضافة", value: "none" },
-            { id: "one-sleeve", label: "تطريز ردن واحدة", value: "one_sleeve" },
-            { id: "two-sleeves", label: "تطريز ردن 2", value: "two_sleeves" },
-            { id: "sleeve-color", label: "إضافة لون للردن 5 سم", value: "sleeve_color_5cm" },
-            { id: "sleeve-color-slit", label: "إضافة لون للردن + فتحة", value: "sleeve_color_slit" }
+            { id: "none", label: "بدون إضافة", value: "none", description: "الروب بدون تطريز أو تطعيم إضافي." },
+            { id: "one-sleeve", label: "تطريز ردن واحدة", value: "one_sleeve", description: "تطريز على ردن واحدة حسب التصميم المطلوب." },
+            { id: "two-sleeves", label: "تطريز ردن 2", value: "two_sleeves", description: "تطريز على الردنين." },
+            { id: "sleeve-color", label: "إضافة لون للردن 5 سم", value: "sleeve_color_5cm", description: "شريط لوني بعرض 5 سم على الردن." },
+            { id: "sleeve-color-slit", label: "إضافة لون للردن + فتحة", value: "sleeve_color_slit", description: "إضافة لونية مع فتحة في الردن." }
           ],
           defaultValue: "none"
-        },
-        {
-          ...imageUploadDefaults,
-          id: "robe_addition_image",
-          key: "robe_addition_image",
-          label: "إرفاق صورة نموذج الاختيار المطلوب",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5,
-          conditional: [{ fieldKey: "robe_addition", operator: "not_equals", value: "none" }]
         }
       ]
     },
     {
       id: "sash",
       title: "الوشاح",
+      description: "اختر نوع الوشاح من الصور المرجعية.",
       fields: [
         {
           id: "sash_type",
@@ -141,7 +147,14 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           showOptionImages: true,
           options: sashOptions
-        },
+        }
+      ]
+    },
+    {
+      id: "sash_embroidery",
+      title: "تطريز الوشاح",
+      description: "النصوص والتفاصيل المطلوبة على الوشاح.",
+      fields: [
         {
           id: "sash_back_text",
           key: "sash_back_text",
@@ -151,28 +164,12 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
         },
         {
-          ...imageUploadDefaults,
-          id: "sash_back_image",
-          key: "sash_back_image",
-          label: "صورة التصميم أو اللوكو المطلوب في ظهر الوشاح",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5,
-          conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
-        },
-        {
           id: "sash_edge_embroidery",
           key: "sash_edge_embroidery",
           label: "تطريز حافة الوشاح (إطار للوشاح)",
           type: "boolean",
           defaultValue: false
-        }
-      ]
-    },
-    {
-      id: "embroidery",
-      title: "التطريز",
-      fields: [
+        },
         {
           id: "name_embroidery",
           key: "name_embroidery",
@@ -188,21 +185,13 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "تطريز جهة السنة",
           type: "short_text",
           description: "كتابة نوع التطريز المطلوب: سنة - اسم القسم - لوكو خاص"
-        },
-        {
-          ...imageUploadDefaults,
-          id: "year_side_image",
-          key: "year_side_image",
-          label: "إرفاق صورة التصميم المطلوب",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5
         }
       ]
     },
     {
       id: "cap",
       title: "القبعة",
+      description: "اختر نوع القبعة والإعدادات المطلوبة.",
       fields: [
         {
           id: "cap_type",
@@ -212,6 +201,50 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           showOptionImages: true,
           options: capOptions
+        },
+        {
+          id: "cap_elastic",
+          key: "cap_elastic",
+          label: "إضافة لاستيك خلف القبعة",
+          type: "boolean",
+          required: true,
+          defaultValue: false
+        }
+      ]
+    },
+    {
+      id: "uploads",
+      title: "تصاميم الطالب",
+      description: "صور التصميم الخاصة بك فقط — ليست صور المنتج المرجعية.",
+      fields: [
+        {
+          ...imageUploadDefaults,
+          id: "robe_addition_image",
+          key: "robe_addition_image",
+          label: "تصميم إضافة الروب",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
+          conditional: [{ fieldKey: "robe_addition", operator: "not_equals", value: "none" }]
+        },
+        {
+          ...imageUploadDefaults,
+          id: "sash_back_image",
+          key: "sash_back_image",
+          label: "تصميم ظهر الوشاح",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
+          conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
+        },
+        {
+          ...imageUploadDefaults,
+          id: "year_side_image",
+          key: "year_side_image",
+          label: "تصميم جهة السنة",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5
         },
         {
           ...imageUploadDefaults,
@@ -230,33 +263,62 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           type: "image_upload",
           uploadMode: "multiple",
           maxFiles: 5
-        },
-        {
-          id: "cap_elastic",
-          key: "cap_elastic",
-          label: "إضافة لاستيك خلف القبعة",
-          type: "boolean",
-          required: true,
-          defaultValue: false
         }
       ]
     }
   ]
 };
 
-export const defaultWizardSteps = ["بيانات الطالب", "الروب", "الوشاح", "التطريز", "القبعة", "مراجعة الطلب"];
+export const defaultWizardSteps = [
+  "بيانات الطالب",
+  "نوع الحجز",
+  "الروب",
+  "إضافات الروب",
+  "الوشاح",
+  "تطريز الوشاح",
+  "القبعة",
+  "التصاميم",
+  "مراجعة الطلب"
+];
 
 export function flattenFields(sections: FormSection[]) {
   return sections.flatMap((section) => section.fields);
 }
 
+export function findSelectedOption(options: FormOption[] | undefined, value: unknown): FormOption | undefined {
+  if (!options || value === undefined || value === null || value === "") return undefined;
+  for (const option of options) {
+    if (option.value === value) return option;
+    const child = option.children?.find((entry) => entry.value === value);
+    if (child) {
+      return {
+        ...child,
+        label: `${option.label} - ${child.label}`,
+        imageUrl: child.imageUrl || option.imageUrl,
+        imagePath: child.imagePath || option.imagePath,
+        imageAlt: child.imageAlt || option.imageAlt || child.label
+      };
+    }
+  }
+  return undefined;
+}
+
 export function optionLabel(options: FormOption[] | undefined, value: unknown): string {
   if (typeof value === "boolean") return value ? "نعم" : "لا";
-  if (!options) return String(value ?? "");
-  for (const option of options) {
-    if (option.value === value) return option.label;
-    const child = option.children?.find((entry) => entry.value === value);
-    if (child) return `${option.label} - ${child.label}`;
-  }
-  return String(value ?? "");
+  const selected = findSelectedOption(options, value);
+  if (selected) return selected.label;
+  if (value === undefined || value === null || value === "") return "";
+  return String(value);
+}
+
+export function fieldIsVisible(field: FormField, answers: Record<string, unknown>) {
+  if (!field.conditional?.length) return true;
+  return field.conditional.every((rule) => {
+    const current = answers[rule.fieldKey];
+    if (rule.operator === "truthy") return Boolean(current);
+    if (rule.operator === "equals") return current === rule.value;
+    if (rule.operator === "not_equals") return current !== rule.value;
+    if (rule.operator === "includes") return String(current ?? "").includes(String(rule.value));
+    return true;
+  });
 }

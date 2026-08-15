@@ -1,9 +1,13 @@
 import { Badge, Card, LinkButton } from "@/components/ui";
+import { BrandPhoto } from "@/components/brand-photo";
+import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth";
+import { BRAND } from "@/lib/brand-assets";
 import { getDashboardMetrics, listBatches, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
 import { RepresentativeSearch } from "@/components/representative-search";
 import { listStudents } from "@/lib/data";
+import { formatArabicDate } from "@/lib/utils";
 
 export default async function AdminDashboardPage({
   searchParams
@@ -15,7 +19,7 @@ export default async function AdminDashboardPage({
   const [metrics, batches, submissions] = await Promise.all([
     getDashboardMetrics(user),
     listBatches(user),
-    listSubmissions(user)
+    listSubmissions(user, { limit: 8 })
   ]);
 
   if (user.role === "REPRESENTATIVE") {
@@ -23,9 +27,36 @@ export default async function AdminDashboardPage({
     return (
       <div className="grid gap-5">
         <div>
-          <p className="text-sm font-bold text-[var(--gold)]">Representative Mobile Desk</p>
-          <h1 className="text-3xl font-black text-[var(--olive-dark)]">بحث عن الطالب</h1>
+          <p className="text-sm font-bold text-[var(--gold)]">لوحة الممثل</p>
+          <h1 className="text-3xl font-black text-[var(--olive-dark)]">دفعاتي اليوم</h1>
         </div>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="طلبات اليوم" value={metrics.todayOrders} />
+          <Metric label="إجمالي الطلبات" value={metrics.submittedOrders} />
+          <Metric label="قيد المراجعة" value={metrics.reviewed} />
+          <Metric label="تمت الموافقة" value={metrics.confirmed} />
+          <Metric label="قيد الطباعة" value={metrics.inProduction} />
+          <Metric label="جاهزة للاستلام" value={metrics.ready} />
+          <Metric label="تم التسليم" value={metrics.delivered} />
+          <Metric label="طلاب لم يرسلوا طلباً بعد" value={metrics.pendingStudents} />
+        </section>
+        <Card>
+          <h2 className="text-2xl font-black text-[var(--olive-dark)]">آخر الطلبات</h2>
+          <div className="mt-4 grid gap-3">
+            {submissions.slice(0, 5).map((submission) => (
+              <LinkButton key={submission.id} href={`/admin/orders/${submission.id}`} variant="ghost" className="justify-between border border-[var(--border)] bg-white/60">
+                <span>
+                  {submission.booking_number} · {submission.student_name}
+                  <span className="mt-1 block text-xs text-[var(--muted)]">{formatArabicDate(submission.submitted_at)}</span>
+                </span>
+                <Badge tone="green">{statusLabels[submission.status]}</Badge>
+              </LinkButton>
+            ))}
+            {!submissions.length ? (
+              <EmptyState title="لا توجد طلبات في دفعاتك" description="ستظهر طلبات الطلاب المعيّنين لك هنا." actionHref="/admin/batches" actionLabel="فتح دفعاتي" />
+            ) : null}
+          </div>
+        </Card>
         <RepresentativeSearch initialQuery={q ?? ""} students={students} />
       </div>
     );
@@ -34,23 +65,35 @@ export default async function AdminDashboardPage({
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-bold text-[var(--gold)]">WARKA Booking Management</p>
-          <h1 className="text-4xl font-black text-[var(--olive-dark)]">لوحة التحكم</h1>
+        <div className="flex min-w-0 items-center gap-3">
+          <BrandPhoto
+            asset={BRAND.adminAccent}
+            aspect="1/1"
+            sizes="72px"
+            className="h-14 w-14 shrink-0 !rounded-2xl"
+            rounded={false}
+          />
+          <div>
+            <p className="text-sm font-bold text-[var(--gold)]">WARKA Booking Management</p>
+            <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">لوحة التحكم</h1>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <LinkButton href="/admin/batches/new">إنشاء دفعة</LinkButton>
-          <LinkButton href="/f/cybersecurity-2027" variant="secondary">معاينة النموذج</LinkButton>
+          <LinkButton href="/admin/forms" variant="secondary">إدارة النماذج</LinkButton>
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="طلبات اليوم" value={metrics.todayOrders} />
+        <Metric label="إجمالي الطلبات" value={metrics.submittedOrders} />
+        <Metric label="قيد المراجعة" value={metrics.reviewed} />
+        <Metric label="تمت الموافقة" value={metrics.confirmed} />
+        <Metric label="قيد الطباعة" value={metrics.inProduction} />
+        <Metric label="جاهزة للاستلام" value={metrics.ready} />
+        <Metric label="تم التسليم" value={metrics.delivered} />
+        <Metric label="طلاب لم يرسلوا طلباً بعد" value={metrics.pendingStudents} />
         <Metric label="الدفعات النشطة" value={metrics.activeBatches} />
-        <Metric label="إجمالي الطلاب" value={metrics.totalStudents} />
-        <Metric label="الطلبات المستلمة" value={metrics.submittedOrders} />
-        <Metric label="طلاب غير مكتملين" value={metrics.pendingStudents} />
-        <Metric label="قيد التجهيز" value={metrics.inProduction} />
-        <Metric label="جاهزة" value={metrics.ready} />
       </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -80,11 +123,16 @@ export default async function AdminDashboardPage({
         <div className="mt-4 grid gap-3">
           {submissions.slice(0, 5).map((submission) => (
             <LinkButton key={submission.id} href={`/admin/orders/${submission.id}`} variant="ghost" className="justify-between border border-[var(--border)] bg-white/60">
-              <span>{submission.booking_number} · {submission.student_name}</span>
+              <span>
+                {submission.booking_number} · {submission.student_name}
+                <span className="mt-1 block text-xs text-[var(--muted)]">{formatArabicDate(submission.submitted_at)}</span>
+              </span>
               <Badge tone="green">{statusLabels[submission.status]}</Badge>
             </LinkButton>
           ))}
-          {!submissions.length ? <p className="text-[var(--muted)]">لا توجد حجوزات مستلمة حتى الآن.</p> : null}
+          {!submissions.length ? (
+            <EmptyState title="لا توجد طلبات بعد" description="ستظهر هنا أحدث الحجوزات بعد إرسال الطلاب لطلباتهم." actionHref="/admin/batches" actionLabel="فتح الدفعات" />
+          ) : null}
         </div>
       </Card>
     </div>

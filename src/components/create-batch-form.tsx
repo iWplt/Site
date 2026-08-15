@@ -2,12 +2,16 @@
 
 import { useActionState } from "react";
 import { createBatchAction } from "@/app/actions";
+import { UniformPicker } from "@/components/uniform-picker";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
+import type { FormDefinition } from "@/lib/types";
 
 export function CreateBatchForm({
-  representatives
+  representatives,
+  definition
 }: {
   representatives: Array<{ id: string; full_name: string }>;
+  definition: FormDefinition;
 }) {
   const [state, action, pending] = useActionState(createBatchAction, undefined);
 
@@ -63,6 +67,11 @@ export function CreateBatchForm({
             <option value="closed">مغلقة</option>
             <option value="archived">مؤرشفة</option>
           </select>
+        </div>
+        <div>
+          <h2 className="text-xl font-black text-[var(--olive-dark)]">الزي الموحد للدفعة</h2>
+          <p className="mb-3 mt-1 text-sm text-[var(--muted)]">ثبت خيارات المنتج لهذه الدفعة. الحقول الشخصية تبقى للطالب.</p>
+          <UniformPicker definition={definition} />
         </div>
         {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}
         <Button disabled={pending} className="min-h-12">

@@ -1,4 +1,5 @@
 import { Badge, Card, LinkButton } from "@/components/ui";
+import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth";
 import { listBatches, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
@@ -11,7 +12,10 @@ export default async function OrdersPage({
 }) {
   const user = await requireUser();
   const { batch, q } = await searchParams;
-  const [batches, submissions] = await Promise.all([listBatches(user), listSubmissions(user, { batchId: batch })]);
+  const [batches, submissions] = await Promise.all([
+    listBatches(user),
+    listSubmissions(user, batch === "individual" ? { individualOnly: true } : { batchId: batch })
+  ]);
   const filtered = q
     ? submissions.filter((submission) =>
         [submission.booking_number, submission.student_name, submission.batch_name].some((value) => String(value ?? "").includes(q))
@@ -19,15 +23,18 @@ export default async function OrdersPage({
     : submissions;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div>
         <p className="text-sm font-bold text-[var(--gold)]">Order Management</p>
-        <h1 className="text-4xl font-black text-[var(--olive-dark)]">الطلبات والحجوزات</h1>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الطلبات والحجوزات</h1>
       </div>
       <Card>
         <div className="flex flex-wrap gap-2">
           <LinkButton href="/admin/orders" variant={!batch ? "primary" : "secondary"}>
-            كل الدفعات
+            الكل
+          </LinkButton>
+          <LinkButton href="/admin/orders?batch=individual" variant={batch === "individual" ? "primary" : "secondary"}>
+            حجوزات فردية
           </LinkButton>
           {batches.map((entry) => (
             <LinkButton key={entry.id} href={`/admin/orders?batch=${entry.id}`} variant={batch === entry.id ? "primary" : "secondary"}>
@@ -44,13 +51,15 @@ export default async function OrdersPage({
               <span>
                 <span className="block font-bold">{submission.student_name}</span>
                 <span className="block text-sm text-[var(--muted)]">
-                  {submission.batch_name} · {formatArabicDate(submission.submitted_at)}
+                  {submission.batch_name ?? "حجز فردي"} · {formatArabicDate(submission.submitted_at)}
                 </span>
               </span>
               <Badge tone="green">{statusLabels[submission.status]}</Badge>
             </LinkButton>
           ))}
-          {!filtered.length ? <p className="text-[var(--muted)]">لا توجد حجوزات مستلمة.</p> : null}
+          {!filtered.length ? (
+            <EmptyState title="لا توجد طلبات" description="لا توجد حجوزات ضمن النطاق الحالي." actionHref="/admin/batches" actionLabel="فتح الدفعات" />
+          ) : null}
         </div>
       </Card>
     </div>

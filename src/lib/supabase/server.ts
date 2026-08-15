@@ -2,17 +2,18 @@ import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { getPublicSupabaseEnv } from "@/lib/env";
+import { getPublicSupabaseEnv, getServerSupabaseKey } from "@/lib/env";
 
 export async function createClient() {
   const cookieStore = await cookies();
-  const { url, anonKey } = getPublicSupabaseEnv();
+  const { url } = getPublicSupabaseEnv();
+  const key = getServerSupabaseKey();
 
-  if (!url || !anonKey) {
+  if (!url || !key) {
     return null;
   }
 
-  return createServerClient(url, anonKey, {
+  return createServerClient(url, key, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

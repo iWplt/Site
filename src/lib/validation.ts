@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { flattenFields } from "@/lib/form-definition";
+import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
 import type { FormDefinition } from "@/lib/types";
 
 export const phoneSchema = z
@@ -9,7 +10,10 @@ export const phoneSchema = z
 
 export const accessCodeSchema = z.object({
   slug: z.string().min(2),
-  code: z.string().regex(/^\d{4,10}$/, "رمز الحجز يجب أن يتكون من أرقام فقط.")
+  code: z.preprocess(
+    (value) => (typeof value === "string" ? normalizeAccessCodeInput(value) : value),
+    z.string().regex(/^\d{4,10}$/, "رمز الحجز يجب أن يتكون من أرقام فقط.")
+  )
 });
 
 export const uploadedFileSchema = z.object({

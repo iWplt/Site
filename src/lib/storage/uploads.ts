@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getPersistenceMode } from "@/lib/persistence";
+import { extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
 import {
   sbDeleteOptionImage,
   sbResolveOptionImageUrl,
@@ -36,18 +37,6 @@ export type StoredOptionImage = {
 
 const PUBLIC_DIR = join(process.cwd(), "public");
 
-function extensionFromNameOrMime(originalName: string, mimeType: string) {
-  const fromName = originalName.split(".").pop()?.toLowerCase();
-  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
-  const map: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "application/pdf": "pdf"
-  };
-  return map[mimeType] ?? "bin";
-}
-
 function writePublicFile(relativeDir: string, fileName: string, buffer: Buffer) {
   const absoluteDir = join(PUBLIC_DIR, relativeDir);
   mkdirSync(absoluteDir, { recursive: true });
@@ -66,20 +55,21 @@ export async function storeStudentUpload(
   fieldKey: string,
   file: UploadInputFile
 ): Promise<StoredStudentUpload> {
+  if (!session.studentId) throw new Error("جلسة الحجز غير مكتملة.");
   if (getPersistenceMode() === "supabase") {
     return sbUploadStudentDesign(session, fieldKey, file);
   }
 
-  const extension = extensionFromNameOrMime(file.originalName, file.mimeType);
+  const extension = extensionForMime(file.mimeType);
   const safeName = `${randomUUID()}.${extension}`;
   const relativeDir = join(
     "uploads",
     "batch",
-    session.batchId ?? "individual",
+    sanitizeStorageSegment(session.batchId ?? "individual"),
     "student",
-    session.studentId ?? "guest",
+    sanitizeStorageSegment(session.studentId),
     "field",
-    fieldKey
+    sanitizeStorageSegment(fieldKey)
   );
   const path = writePublicFile(relativeDir, safeName, file.buffer);
 
@@ -109,8 +99,14 @@ export async function storeOptionImage(
     return { optionId, imagePath: option.imagePath ?? "", imageUrl: option.imageUrl };
   }
 
-  const extension = extensionFromNameOrMime(file.originalName, file.mimeType);
-  const relativeDir = join("uploads", "form-options", formId, fieldKey, optionId);
+  const extension = extensionForMime(file.mimeType);
+  const relativeDir = join(
+    "uploads",
+    "form-options",
+    sanitizeStorageSegment(formId),
+    sanitizeStorageSegment(fieldKey),
+    sanitizeStorageSegment(optionId)
+  );
   const fileName = `reference.${extension}`;
   const imagePath = writePublicFile(relativeDir, fileName, file.buffer);
 

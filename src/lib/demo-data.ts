@@ -1,6 +1,8 @@
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import type { Batch, BookingFormRecord, StudentWithState, SubmissionSummary } from "@/lib/types";
 
+export { statusLabels } from "@/lib/labels";
+
 const now = new Date("2026-08-14T03:27:00.000Z").toISOString();
 
 export const demoBatch: Batch = {
@@ -82,25 +84,3 @@ export const demoSubmissions: SubmissionSummary[] = [
     submitted_at: now
   }
 ];
-
-export const statusLabels: Record<string, string> = {
-  draft: "مسودة",
-  active: "نشطة",
-  closed: "مغلقة",
-  archived: "مؤرشفة",
-  published: "منشور",
-  ACTIVE: "فعال",
-  USED: "مستخدم",
-  DISABLED: "معطل",
-  EXPIRED: "منتهي",
-  SUBMITTED: "تم الاستلام",
-  REVIEWED: "قيد المراجعة",
-  CONFIRMED: "تم التأكيد",
-  IN_PRODUCTION: "قيد التجهيز",
-  READY: "جاهز",
-  DELIVERED: "تم التسليم",
-  CANCELLED: "ملغي",
-  pending: "لم يرسل",
-  submitted: "أرسل الطلب",
-  reopened: "معاد فتحه"
-};

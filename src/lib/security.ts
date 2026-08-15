@@ -1,23 +1,42 @@
 import "server-only";
 
 import crypto from "node:crypto";
+import { requireAccessCodeHmacSecret } from "@/lib/access-code-scope";
+import { hasSupabaseConfig, isProductionRuntime } from "@/lib/env";
 import type { VerifiedBookingSession } from "@/lib/types";
+
+export { getAccessCodeFingerprintScope, normalizeAccessCodeInput, requireAccessCodeHmacSecret } from "@/lib/access-code-scope";
 
 function base64Url(input: Buffer | string) {
   return Buffer.from(input).toString("base64url");
 }
 
-function secret(name: string, fallback: string) {
-  return process.env[name] || fallback;
+function requiredSecret(name: string, fallback: string) {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  if (isProductionRuntime() || hasSupabaseConfig()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return fallback;
 }
 
 function encryptionKey() {
-  const configured = process.env.ACCESS_CODE_ENCRYPTION_KEY;
+  const configured = process.env.ACCESS_CODE_ENCRYPTION_KEY?.trim();
   if (configured) {
     const decoded = Buffer.from(configured, configured.length === 64 ? "hex" : "base64");
     if (decoded.length === 32) return decoded;
   }
+  if (isProductionRuntime() || hasSupabaseConfig()) {
+    throw new Error("Missing required environment variable: ACCESS_CODE_ENCRYPTION_KEY");
+  }
   return crypto.createHash("sha256").update("warka-local-development-encryption-key").digest();
+}
+
+function hmacEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function generateNumericCode(length = 6) {
@@ -45,16 +64,20 @@ export function decryptAccessCode(encrypted: string) {
 }
 
 export function accessCodeFingerprint(code: string, formIdOrBatchId: string) {
+  const scope = formIdOrBatchId?.trim();
+  if (!scope) {
+    throw new Error("Access code fingerprint scope is required.");
+  }
   return crypto
-    .createHmac("sha256", secret("ACCESS_CODE_HMAC_SECRET", "warka-local-hmac-secret"))
-    .update(`${formIdOrBatchId}:${code}`)
+    .createHmac("sha256", requireAccessCodeHmacSecret())
+    .update(`${scope}:${code}`)
     .digest("hex");
 }
 
 export function signBookingSession(session: VerifiedBookingSession) {
   const payload = base64Url(JSON.stringify(session));
   const signature = crypto
-    .createHmac("sha256", secret("BOOKING_SESSION_SECRET", "warka-local-session-secret"))
+    .createHmac("sha256", requiredSecret("BOOKING_SESSION_SECRET", "warka-local-session-secret"))
     .update(payload)
     .digest("base64url");
   return `${payload}.${signature}`;
@@ -66,13 +89,17 @@ export function verifyBookingSession(token: string | undefined): VerifiedBooking
   if (!payload || !signature) return null;
 
   const expected = crypto
-    .createHmac("sha256", secret("BOOKING_SESSION_SECRET", "warka-local-session-secret"))
+    .createHmac("sha256", requiredSecret("BOOKING_SESSION_SECRET", "warka-local-session-secret"))
     .update(payload)
     .digest("base64url");
 
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  if (!hmacEqual(signature, expected)) return null;
 
-  const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as VerifiedBookingSession;
-  if (parsed.expiresAt < Date.now()) return null;
-  return parsed;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as VerifiedBookingSession;
+    if (parsed.expiresAt < Date.now()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }

@@ -3,6 +3,7 @@ import { CreateFormPanel } from "@/components/create-form-panel";
 import { FormOptionImageEditor } from "@/components/form-option-image-editor";
 import { FormUploadSettings } from "@/components/form-upload-settings";
 import { Badge, Button, Card, LinkButton } from "@/components/ui";
+import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth";
 import { listBatches, listForms } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
@@ -12,11 +13,11 @@ export default async function FormsPage() {
   const [forms, batches] = await Promise.all([listForms(user), listBatches(user)]);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold text-[var(--gold)]">Dynamic Form Builder</p>
-          <h1 className="text-4xl font-black text-[var(--olive-dark)]">النماذج الديناميكية</h1>
+          <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">النماذج الديناميكية</h1>
         </div>
       </div>
       {user.role === "OWNER" ? <CreateFormPanel batches={batches.map((batch) => ({ id: batch.id, name: batch.name }))} /> : null}
@@ -84,6 +85,9 @@ export default async function FormsPage() {
             </Card>
           );
         })}
+        {!forms.length ? (
+          <EmptyState title="لا توجد نماذج" description="أنشئ نموذجاً أو أنشئ دفعة ليُنشأ نموذج الحجز تلقائياً." actionHref="/admin/batches/new" actionLabel="إنشاء دفعة" />
+        ) : null}
       </div>
     </div>
   );

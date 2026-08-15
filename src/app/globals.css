@@ -58,7 +58,7 @@ button {
   cursor: pointer;
 }
 
-img,
+img:not([data-nimg]),
 svg,
 video,
 canvas {
@@ -73,21 +73,78 @@ canvas {
 
 .warka-card {
   border: 1px solid var(--border);
-  background: rgba(255, 250, 240, 0.9);
+  background: var(--paper);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(18px);
 }
 
-.warka-pattern {
-  background-image:
-    linear-gradient(rgba(63, 71, 45, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(63, 71, 45, 0.05) 1px, transparent 1px);
-  background-size: 22px 22px;
+.warka-public {
+  background:
+    radial-gradient(circle at top right, rgba(181, 154, 99, 0.22), transparent 28rem),
+    linear-gradient(165deg, #fbf6e9 0%, #f4ead4 48%, #efe4cc 100%);
+}
+
+@media (max-width: 767px) {
+  .warka-public .warka-brand-lockup {
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+  }
+}
+
+.warka-brand-lockup img {
+  display: block;
+}
+
+.warka-photo-tile {
+  box-shadow: 0 14px 36px rgba(37, 43, 28, 0.1);
+}
+
+.mask-ambient {
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 70%, transparent 100%);
 }
 
 .ltr {
   direction: ltr;
   unicode-bidi: embed;
+}
+
+h1, h2 {
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html, body {
+    background: #fffaf0 !important;
+    color: #252b1c !important;
+  }
+
+  body {
+    background-image: none !important;
+  }
+
+  .print-page {
+    padding: 0 !important;
+  }
+
+  .booking-sheet {
+    box-shadow: none !important;
+    max-width: none !important;
+  }
+
+  .booking-sheet .warka-brand-lockup img {
+    background: transparent !important;
+    max-height: 5rem;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
 }
 
 @media (max-width: 430px) {

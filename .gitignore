@@ -10,3 +10,6 @@ coverage
 public/uploads
 supabase/.branches
 supabase/.temp
+.netlify
+tmp-*.json
+public/warka-brand/WARKA_mobile_visual_assets

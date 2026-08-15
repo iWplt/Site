@@ -1,4 +1,12 @@
 export type Role = "OWNER" | "REPRESENTATIVE";
+
+export type AppUser = {
+  id: string;
+  email?: string;
+  role: Role;
+  fullName: string;
+  batchIds?: string[];
+};
 export type BatchStatus = "draft" | "active" | "closed" | "archived";
 export type FormType = "BATCH" | "INDIVIDUAL";
 export type FormStatus = "draft" | "published" | "closed" | "archived";
@@ -107,9 +115,10 @@ export type Batch = {
 
 export type Student = {
   id: string;
-  batch_id: string;
+  batch_id: string | null;
   full_name: string;
   phone?: string;
+  address?: string;
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -122,6 +131,7 @@ export type StudentWithState = Student & {
   submission_status?: "pending" | "submitted" | "reopened";
   order_status?: OrderStatus;
   booking_number?: string;
+  form_slug?: string | null;
 };
 
 export type BookingFormRecord = {

@@ -25,7 +25,7 @@ export function CreateRepresentativeForm({ batches }: { batches: Array<{ id: str
         </div>
         <div>
           <FieldLabel>كلمة المرور الابتدائية</FieldLabel>
-          <TextInput name="password" defaultValue="rep123" className="min-h-12" />
+          <TextInput name="password" type="password" required minLength={8} className="min-h-12" />
         </div>
         <div>
           <FieldLabel>تعيين الدفعات</FieldLabel>

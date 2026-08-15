@@ -1,3 +1,5 @@
+import "server-only";
+
 import * as XLSX from "@e965/xlsx";
 import { normalizeArabicText } from "@/lib/utils";
 import type { ExcelWorkbookPreview, ImportPreviewRow } from "@/lib/types";

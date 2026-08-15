@@ -2,6 +2,7 @@ import { toggleRepresentativeAction } from "@/app/actions";
 import { AssignBatchesForm } from "@/components/assign-batches-form";
 import { CreateRepresentativeForm } from "@/components/create-representative-form";
 import { Badge, Button, Card } from "@/components/ui";
+import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth";
 import { listBatches, listRepresentatives } from "@/lib/data";
 
@@ -10,10 +11,10 @@ export default async function RepresentativesPage() {
   const [reps, batches] = await Promise.all([listRepresentatives(), listBatches(user)]);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div>
         <p className="text-sm font-bold text-[var(--gold)]">Representatives</p>
-        <h1 className="text-4xl font-black text-[var(--olive-dark)]">الممثلون</h1>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الممثلون</h1>
         <p className="mt-2 text-[var(--muted)]">لا يوجد تسجيل عام. المالك ينشئ الحساب ويعين الدفعات فقط.</p>
       </div>
       <CreateRepresentativeForm batches={batches.map((batch) => ({ id: batch.id, name: batch.name }))} />
@@ -55,6 +56,9 @@ export default async function RepresentativesPage() {
             </div>
           </Card>
         ))}
+        {!reps.length ? (
+          <EmptyState title="لا يوجد ممثلون" description="أنشئ حساب ممثل وعيّن له الدفعة التي سيديرها." />
+        ) : null}
       </div>
     </div>
   );

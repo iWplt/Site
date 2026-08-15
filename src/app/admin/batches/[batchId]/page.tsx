@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
+import { BatchUniformForm } from "@/components/batch-uniform-form";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getBatch, listStudents, listSubmissions } from "@/lib/data";
+import { getBatch, getFixedOptions, getPublicForm, listStudents, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
 
 export default async function BatchDetailPage({
@@ -16,10 +17,15 @@ export default async function BatchDetailPage({
   const { created } = await searchParams;
   const batch = await getBatch(user, batchId);
   if (!batch) notFound();
-  const [students, orders] = await Promise.all([listStudents(user, { batchId }), listSubmissions(user, { batchId })]);
+  const [students, orders, uniform, formWithImages] = await Promise.all([
+    listStudents(user, { batchId }),
+    listSubmissions(user, { batchId }),
+    batch.form ? getFixedOptions(user, batch.form.id) : Promise.resolve({}),
+    batch.form ? getPublicForm(batch.form.slug) : Promise.resolve(null)
+  ]);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       {created ? (
         <Card className="border-[var(--success)] bg-[#386a3d12]">
           <h2 className="text-2xl font-black text-[var(--olive-dark)]">تم إنشاء الدفعة بنجاح</h2>
@@ -42,7 +48,7 @@ export default async function BatchDetailPage({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold text-[var(--gold)]">{batch.university}</p>
-          <h1 className="text-4xl font-black text-[var(--olive-dark)]">{batch.name}</h1>
+          <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">{batch.name}</h1>
           <p className="mt-2 text-[var(--muted)]">
             {batch.college} / {batch.department} / {batch.stage}
           </p>
@@ -92,6 +98,10 @@ export default async function BatchDetailPage({
           </div>
         </Card>
       </div>
+
+      {formWithImages ? (
+        <BatchUniformForm formId={formWithImages.id} definition={formWithImages.definition} value={uniform} />
+      ) : null}
     </div>
   );
 }

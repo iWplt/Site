@@ -5,9 +5,13 @@ export function getPublicSupabaseEnv() {
   };
 }
 
+export function getServerSupabaseKey() {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || undefined;
+}
+
 export function hasSupabaseConfig() {
-  const { url, anonKey } = getPublicSupabaseEnv();
-  return Boolean(url && anonKey);
+  const { url } = getPublicSupabaseEnv();
+  return Boolean(url && getServerSupabaseKey());
 }
 
 export function hasServiceRole() {
@@ -50,6 +54,7 @@ export function requireSupabaseSecretsForWrites() {
 export function isProductionRuntime() {
   if (process.env.WARKA_RUNTIME_ENV === "production") return true;
   if (process.env.VERCEL_ENV === "production") return true;
+  if (process.env.CONTEXT === "production" && process.env.NETLIFY === "true") return true;
 
   if (process.env.NODE_ENV === "production") {
     const phase = process.env.NEXT_PHASE;
@@ -89,6 +94,12 @@ export function validateRuntimeEnvironment(): EnvValidationResult {
         ok: false,
         error:
           "WARKA production requires ACCESS_CODE_ENCRYPTION_KEY, ACCESS_CODE_HMAC_SECRET, and BOOKING_SESSION_SECRET."
+      };
+    }
+    if (!process.env.NEXT_PUBLIC_APP_URL?.trim() && !process.env.URL?.trim()) {
+      return {
+        ok: false,
+        error: "WARKA production requires NEXT_PUBLIC_APP_URL (or Netlify URL) for booking, receipt, and QR links."
       };
     }
     return { ok: true, mode: "supabase" };

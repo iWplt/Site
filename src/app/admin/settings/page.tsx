@@ -8,10 +8,9 @@ export default async function SettingsPage() {
   const mode = getActivePersistenceMode();
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div>
-        <p className="text-sm font-bold text-[var(--gold)]">System Settings</p>
-        <h1 className="text-4xl font-black text-[var(--olive-dark)]">الإعدادات</h1>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الإعدادات</h1>
       </div>
       <Card>
         <h2 className="text-2xl font-black text-[var(--olive-dark)]">مصدر البيانات</h2>

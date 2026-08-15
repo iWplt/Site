@@ -2,7 +2,9 @@
 
 import { useActionState } from "react";
 import { loginAction } from "@/app/actions";
+import { BrandPhoto } from "@/components/brand-photo";
 import { LogoMark } from "@/components/ui";
+import { BRAND } from "@/lib/brand-assets";
 
 type Props = {
   demoMode?: boolean;
@@ -13,14 +15,18 @@ export function LoginForm({ demoMode = true }: Props) {
 
   return (
     <form action={action} className="mt-6 grid gap-3">
+      <label className="text-sm font-bold text-[var(--olive-dark)]" htmlFor="email">البريد الإلكتروني</label>
       <input
+        id="email"
         name="email"
         className="min-h-12 rounded-2xl border border-[var(--border)] bg-white/80 px-4 py-3 text-base"
         placeholder="البريد الإلكتروني"
         defaultValue={demoMode ? "owner@warka.local" : undefined}
         autoComplete="username"
       />
+      <label className="text-sm font-bold text-[var(--olive-dark)]" htmlFor="password">كلمة المرور</label>
       <input
+        id="password"
         name="password"
         className="min-h-12 rounded-2xl border border-[var(--border)] bg-white/80 px-4 py-3 text-base"
         placeholder="كلمة المرور"
@@ -53,9 +59,18 @@ export function LoginForm({ demoMode = true }: Props) {
 
 export function LoginPageClient({ demoMode = true }: Props) {
   return (
-    <main className="grid min-h-screen place-items-center px-4">
-      <section className="warka-card w-full max-w-md rounded-[2rem] p-7">
-        <LogoMark />
+    <main className="grid min-h-screen place-items-center overflow-x-hidden px-3 py-6 sm:px-4">
+      <section className="warka-card w-full max-w-md rounded-[1.5rem] p-5 sm:rounded-[2rem] sm:p-7">
+        <div className="flex items-center justify-between gap-3">
+          <LogoMark compact priority />
+          <BrandPhoto
+            asset={BRAND.loginAccent}
+            aspect="1/1"
+            sizes="64px"
+            className="h-16 w-16 shrink-0 !rounded-2xl"
+            rounded={false}
+          />
+        </div>
         <h1 className="mt-8 text-3xl font-black text-[var(--olive-dark)]">تسجيل دخول الإدارة</h1>
         <p className="mt-3 leading-8 text-[var(--muted)]">لا يوجد تسجيل عام. المالك ينشئ حسابات الممثلين ويمنحهم الدفعات.</p>
         <LoginForm demoMode={demoMode} />

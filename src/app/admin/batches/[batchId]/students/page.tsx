@@ -19,11 +19,10 @@ export default async function BatchStudentsPage({
   const students = await listStudents(user, { batchId });
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-[var(--gold)]">{batch.name}</p>
-          <h1 className="text-4xl font-black text-[var(--olive-dark)]">طلاب الدفعة</h1>
+          <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">طلاب الدفعة</h1>
           <p className="mt-2 text-[var(--muted)]">
             {batch.stats.total} طالب · {batch.stats.submitted} مكتمل · {batch.stats.pending} غير مكتمل
           </p>

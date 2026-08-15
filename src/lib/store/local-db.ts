@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
+import type { UniformSelectionMap } from "@/lib/form-uniform";
 import { encryptAccessCode, generateNumericCode, accessCodeFingerprint } from "@/lib/security";
+import { getAccessCodeFingerprintScope } from "@/lib/access-code-scope";
 import type {
   AccessCodeStatus,
   Batch,
@@ -32,7 +34,7 @@ export type Representative = {
 export type AccessCodeRecord = {
   id: string;
   student_id: string;
-  batch_id: string;
+  batch_id: string | null;
   form_id: string;
   code: string;
   code_ciphertext: string;
@@ -311,7 +313,7 @@ function seed(): LocalDatabase {
       form_id: formAId,
       code: entry.code,
       code_ciphertext: encryptAccessCode(entry.code),
-      code_fingerprint: accessCodeFingerprint(entry.code, batchAId),
+      code_fingerprint: accessCodeFingerprint(entry.code, getAccessCodeFingerprintScope({ id: formAId, batch_id: batchAId })),
       status: entry.code === "128446" ? "DISABLED" : "ACTIVE",
       created_at: created,
       updated_at: created
@@ -334,7 +336,7 @@ function seed(): LocalDatabase {
       form_id: formBId,
       code: entry.code,
       code_ciphertext: encryptAccessCode(entry.code),
-      code_fingerprint: accessCodeFingerprint(entry.code, batchBId),
+      code_fingerprint: accessCodeFingerprint(entry.code, getAccessCodeFingerprintScope({ id: formBId, batch_id: batchBId })),
       status: "ACTIVE",
       created_at: created,
       updated_at: created
@@ -398,6 +400,7 @@ export function toStudentWithState(db: LocalDatabase, studentId: string): Studen
     .filter((entry) => entry.student_id === student.id)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const submission = db.submissions.find((entry) => entry.student_id === student.id && entry.is_current);
+  const form = code ? db.forms.find((entry) => entry.id === code.form_id) : db.forms.find((entry) => entry.slug === "individual");
   return {
     ...student,
     batch: batch ? { name: batch.name, graduation_year: batch.graduation_year } : undefined,
@@ -405,7 +408,8 @@ export function toStudentWithState(db: LocalDatabase, studentId: string): Studen
     code_status: code?.status,
     submission_status: submission ? "submitted" : "pending",
     order_status: submission?.status,
-    booking_number: submission?.booking_number
+    booking_number: submission?.booking_number,
+    form_slug: form?.status === "published" ? form.slug : null
   };
 }
 
@@ -417,7 +421,13 @@ export function nextBookingNumber(db: LocalDatabase, batchId?: string) {
   return `WK-${year}-${String(count).padStart(5, "0")}`;
 }
 
-export function createAccessCode(db: LocalDatabase, studentId: string, batchId: string, formId: string, status: AccessCodeStatus = "ACTIVE") {
+export function createAccessCode(
+  db: LocalDatabase,
+  studentId: string,
+  batchId: string | null,
+  formId: string,
+  status: AccessCodeStatus = "ACTIVE"
+) {
   const code = generateNumericCode();
   const record: AccessCodeRecord = {
     id: randomUUID(),
@@ -426,7 +436,7 @@ export function createAccessCode(db: LocalDatabase, studentId: string, batchId: 
     form_id: formId,
     code,
     code_ciphertext: encryptAccessCode(code),
-    code_fingerprint: accessCodeFingerprint(code, batchId),
+    code_fingerprint: accessCodeFingerprint(code, getAccessCodeFingerprintScope({ id: formId, batch_id: batchId })),
     status,
     created_at: now(),
     updated_at: now()
@@ -455,8 +465,52 @@ export function audit(
   });
 }
 
-export function assertBatchAccess(db: LocalDatabase, user: { id: string; role: Role }, batchId: string) {
+export function deleteStudentRecords(
+  db: LocalDatabase,
+  user: { id: string; role: Role; fullName?: string },
+  studentIds: string[]
+) {
+  const uniqueIds = Array.from(new Set(studentIds.map((id) => id.trim()).filter(Boolean)));
+  const blocked: Array<{ id: string; name: string }> = [];
+  const deletedIds: string[] = [];
+  let rejected = studentIds.length - uniqueIds.length;
+
+  for (const studentId of uniqueIds) {
+    const student = db.students.find((entry) => entry.id === studentId);
+    if (!student) {
+      rejected += 1;
+      continue;
+    }
+    try {
+      assertBatchAccess(db, user, student.batch_id);
+    } catch {
+      rejected += 1;
+      continue;
+    }
+    const hasOrder = db.submissions.some((submission) => submission.student_id === student.id);
+    if (hasOrder) {
+      blocked.push({ id: student.id, name: student.full_name });
+      continue;
+    }
+    db.access_codes = db.access_codes.filter((code) => code.student_id !== student.id);
+    db.students = db.students.filter((entry) => entry.id !== student.id);
+    deletedIds.push(student.id);
+  }
+
+  if (deletedIds.length) {
+    audit(db, "STUDENTS_DELETED", "student", deletedIds[0], { id: user.id, label: user.fullName }, {
+      count: deletedIds.length,
+      blocked: blocked.length,
+      rejected
+    });
+  }
+
+  return { deleted: deletedIds.length, deletedIds, blocked, rejected };
+}
+
+export function assertBatchAccess(db: LocalDatabase, user: { id: string; role: Role }, batchId: string | null | undefined) {
   if (user.role === "OWNER") return;
+  if (!batchId) throw new Error("غير مصرح بالوصول إلى هذه الدفعة.");
   const profile = db.profiles.find((entry) => entry.id === user.id);
   if (!profile || profile.disabled || !profile.batch_ids.includes(batchId)) {
     throw new Error("غير مصرح بالوصول إلى هذه الدفعة.");
@@ -473,6 +527,7 @@ export type CreateBatchInput = {
   description?: string;
   representative_id?: string;
   status: BatchStatus;
+  uniform?: UniformSelectionMap;
 };
 
 export function createBatchRecord(db: LocalDatabase, input: CreateBatchInput, actorId?: string) {

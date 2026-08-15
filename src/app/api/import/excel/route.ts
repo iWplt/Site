@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { analyzeWorkbook } from "@/lib/imports";
-
-const allowedTypes = new Set([
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "application/octet-stream"
-]);
+import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "غير مصرح." }, { status: 401 });
+
   const formData = await request.formData();
   const file = formData.get("file");
 
@@ -16,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (!["xlsx", "xls"].includes(extension ?? "") || !allowedTypes.has(file.type || "application/octet-stream")) {
+  if (!["xlsx", "xls"].includes(extension ?? "")) {
     return NextResponse.json({ error: "الملف يجب أن يكون بصيغة XLS أو XLSX." }, { status: 400 });
   }
 

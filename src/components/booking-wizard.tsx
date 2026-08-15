@@ -1,34 +1,45 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Check, Loader2, LockKeyhole } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, LockKeyhole } from "lucide-react";
+import dynamic from "next/dynamic";
 import { MultipleImageUpload, type UploadedFile } from "@/components/multiple-image-upload";
+import { PublicVisualHero, StudentGalleryStrip } from "@/components/public-visuals";
+import { OptimizedThumb } from "@/components/optimized-thumb";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
-import { defaultWizardSteps, optionLabel } from "@/lib/form-definition";
-import type { BookingFormRecord, FormField, FormSection } from "@/lib/types";
+import { PUBLIC_VISUALS } from "@/lib/brand-assets";
+import { fieldIsVisible } from "@/lib/form-definition";
+import { isUniformProductKey } from "@/lib/form-uniform";
+import { buildLiveOrderSections } from "@/lib/order-view";
+import type { BookingFormRecord, FormField } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const OrderVisual = dynamic(
+  () => import("@/components/order-visual").then((mod) => mod.OrderVisual),
+  { ssr: false, loading: () => <p className="text-sm text-[var(--muted)]">جاري تحميل الملخص...</p> }
+);
 
 type Props = {
   form: BookingFormRecord;
   studentName?: string;
+  studentPhone?: string;
+  studentAddress?: string;
 };
 
-function fieldIsVisible(field: FormField, answers: Record<string, unknown>) {
-  if (!field.conditional?.length) return true;
-  return field.conditional.every((rule) => {
-    const current = answers[rule.fieldKey];
-    if (rule.operator === "truthy") return Boolean(current);
-    if (rule.operator === "equals") return current === rule.value;
-    if (rule.operator === "not_equals") return current !== rule.value;
-    if (rule.operator === "includes") return String(current ?? "").includes(String(rule.value));
-    return true;
-  });
-}
+type SuccessState = {
+  bookingNumber: string;
+  studentName: string;
+  submittedAt: string;
+  receiptToken: string;
+  batchName?: string;
+};
 
-export function BookingWizard({ form, studentName }: Props) {
+export function BookingWizard({ form, studentName, studentPhone, studentAddress }: Props) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = { student_name: studentName };
+    if (studentPhone) initial.phone = studentPhone;
+    if (studentAddress) initial.address = studentAddress;
     form.definition.sections.forEach((section) =>
       section.fields.forEach((field) => {
         if (field.defaultValue !== undefined) initial[field.key] = field.defaultValue;
@@ -38,11 +49,11 @@ export function BookingWizard({ form, studentName }: Props) {
   });
   const [files, setFiles] = useState<Record<string, UploadedFile[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ bookingNumber: string; studentName: string; submittedAt: string } | null>(null);
+  const [success, setSuccess] = useState<SuccessState | null>(null);
   const [isPending, startTransition] = useTransition();
   const sections = form.definition.sections;
   const isReview = step >= sections.length;
+  const stepLabels = [...sections.map((section) => section.title), "مراجعة الطلب"];
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -72,7 +83,7 @@ export function BookingWizard({ form, studentName }: Props) {
       if (field.type === "phone" && value && !/^(\+?964|0)?7[0-9\s-]{8,12}$/.test(String(value))) {
         nextErrors[field.key] = "يرجى إدخال رقم هاتف عراقي صحيح.";
       }
-      if (["image_upload", "file_upload"].includes(field.type) && field.required && !(files[field.key]?.length)) {
+      if (["image_upload", "file_upload"].includes(field.type) && field.required && !files[field.key]?.length) {
         nextErrors[field.key] = "يرجى إرفاق صورة واحدة على الأقل.";
       }
     }
@@ -95,105 +106,129 @@ export function BookingWizard({ form, studentName }: Props) {
       setSuccess({
         bookingNumber: payload.bookingNumber,
         studentName: payload.studentName,
-        submittedAt: payload.submittedAt
+        submittedAt: payload.submittedAt,
+        receiptToken: payload.receiptToken,
+        batchName: payload.batchName
       });
     });
   }
 
   if (success) {
-    return (
-      <Card className="mx-auto max-w-2xl text-center">
-        <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-[#386a3d16] text-[var(--success)]">
-          <Check size={30} />
-        </div>
-        <h1 className="text-3xl font-black text-[var(--olive-dark)]">تم استلام حجزك بنجاح</h1>
-        <p className="mt-3 text-[var(--muted)]">تم حفظ حجزك بنجاح، ولا يمكن استخدام رمز الحجز مرة أخرى بعد إرسال الطلب.</p>
-        <dl className="mt-8 grid gap-3 rounded-3xl bg-white/60 p-5 text-right">
-          <SummaryRow label="رقم الحجز" value={success.bookingNumber} ltr />
-          <SummaryRow label="الطالب" value={success.studentName} />
-          <SummaryRow label="الحالة" value="تم الاستلام" />
-          <SummaryRow label="وقت الإرسال" value={new Date(success.submittedAt).toLocaleString("ar-IQ")} />
-        </dl>
-      </Card>
-    );
+    return <SuccessCard success={success} />;
   }
 
   return (
-    <div className="mx-auto max-w-3xl pb-28">
-      <Card className="mb-4 !rounded-[1.5rem] !p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold text-[var(--gold)]">بطاقة حجز رقمية</p>
+    <div className="mx-auto max-w-3xl pb-32">
+      <Card className="mb-4 !rounded-[1.35rem] !p-4 sm:!p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold tracking-[0.2em] text-[var(--gold)]">WARKA BOOKING</p>
             <h1 className="mt-1 text-xl font-black leading-8 text-[var(--olive-dark)] sm:text-2xl">{form.name}</h1>
+            {studentName ? <p className="mt-1 truncate text-sm text-[var(--muted)]">{studentName}</p> : null}
           </div>
-          <div className="rounded-2xl bg-[#3f472d12] px-3 py-2 text-center">
+          <div className="shrink-0 rounded-2xl bg-[#3f472d10] px-3 py-2 text-center">
             <p className="text-[10px] font-bold text-[var(--muted)]">الخطوة</p>
             <p className="text-lg font-black text-[var(--olive)]">
-              {Math.min(step + 1, sections.length + 1)}/{sections.length + 1}
+              {Math.min(step + 1, stepLabels.length)}/{stepLabels.length}
             </p>
           </div>
         </div>
-        <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
-          {defaultWizardSteps.map((label, index) => (
-            <div key={label} className="min-w-0 flex-1">
+        <ol className="mt-4 flex gap-1 overflow-x-auto pb-1">
+          {stepLabels.map((label, index) => (
+            <li key={`${label}-${index}`} className="min-w-[4.5rem] flex-1">
               <div className={cn("h-1.5 rounded-full", index <= step ? "bg-[var(--olive)]" : "bg-[var(--sand)]")} />
-              <p className="mt-1 truncate text-[10px] font-bold text-[var(--muted)]">{label}</p>
-            </div>
+              <p className={cn("mt-1 truncate text-[10px] font-bold", index === step ? "text-[var(--olive-dark)]" : "text-[var(--muted)]")}>{label}</p>
+            </li>
           ))}
-        </div>
+        </ol>
       </Card>
 
       {isReview ? (
         <ReviewStep
-          sections={sections}
+          form={form}
           answers={answers}
           files={files}
           pending={isPending}
           onBack={() => setStep(sections.length - 1)}
           onSubmit={submit}
-          onPreview={setLightbox}
           error={errors.form}
         />
       ) : (
-        <Card className="!rounded-[1.5rem]">
-          <p className="text-sm font-bold text-[var(--gold)]">{sections[step].title}</p>
-          <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)] sm:text-3xl">{defaultWizardSteps[step]}</h2>
+        <Card className="!rounded-[1.35rem]">
+          <p className="text-xs font-bold text-[var(--gold)]">{String(step + 1).padStart(2, "0")}</p>
+          <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[step].title}</h2>
           {sections[step].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[step].description}</p> : null}
-          <div className="mt-6 grid gap-5">
-            {visibleFields.map((field) => (
+          <div className="mt-6 grid gap-6">
+            {visibleFields.map((field, fieldIndex) => (
               <FieldRenderer
                 key={field.id}
                 field={field}
                 value={answers[field.key]}
                 files={files[field.key] ?? []}
                 error={errors[field.key]}
+                prioritizeImages={fieldIndex === 0}
                 onChange={(value) => setAnswer(field.key, value)}
                 onFiles={(next) => setFiles((current) => ({ ...current, [field.key]: next }))}
               />
             ))}
+            {!visibleFields.length ? <p className="text-[var(--muted)]">لا توجد حقول ظاهرة في هذه الخطوة حسب اختياراتك السابقة.</p> : null}
           </div>
         </Card>
       )}
 
       {!isReview ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[rgba(246,239,225,0.96)] p-3 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[rgba(246,239,225,0.97)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex max-w-3xl gap-3">
             <Button className="min-h-12 flex-1" variant="secondary" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>
-              رجوع
+              <ChevronRight size={16} className="inline" /> رجوع
             </Button>
             <Button className="min-h-12 flex-1" onClick={() => validateStep() && setStep((current) => current + 1)}>
-              التالي
+              متابعة <ChevronLeft size={16} className="inline" />
             </Button>
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
 
-      {lightbox ? (
-        <button type="button" className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setLightbox(null)}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lightbox} alt="" className="max-h-[85vh] max-w-full rounded-2xl object-contain" />
-        </button>
-      ) : null}
+function SuccessCard({ success }: { success: SuccessState }) {
+  const visuals = PUBLIC_VISUALS.booking;
+  return (
+    <div className="mx-auto grid max-w-2xl gap-4">
+      <PublicVisualHero
+        asset={visuals.mosaic[1] ?? visuals.hero}
+        aspect="16/7"
+        sizes="(max-width: 768px) 100vw, 420px"
+        className="max-h-44"
+      />
+      <Card className="text-center !rounded-[1.5rem] !bg-[var(--paper)]">
+      <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-[#386a3d16] text-[var(--success)]">
+        <Check size={30} />
+      </div>
+      <h1 className="text-3xl font-black leading-12 text-[var(--olive-dark)]">تم تسجيل طلبك بنجاح</h1>
+      <p className="mt-3 text-[var(--muted)]">احتفظ برقم الحجز. يمكنك طباعة بطاقة الحجز أو حفظها PDF من المتصفح.</p>
+      <p className="mt-6 text-sm font-bold text-[var(--gold)]">رقم الحجز</p>
+      <p className="mt-1 text-4xl font-black tracking-wide text-[var(--olive-dark)] ltr">{success.bookingNumber}</p>
+      <dl className="mt-6 grid gap-3 rounded-3xl bg-white/70 p-4 text-right">
+        <SummaryRow label="الطالب" value={success.studentName} />
+        {success.batchName ? <SummaryRow label="الدفعة" value={success.batchName} /> : null}
+        <SummaryRow label="وقت الإرسال" value={new Date(success.submittedAt).toLocaleString("ar-IQ")} />
+      </dl>
+      <div className="mt-6 grid gap-3">
+        {success.receiptToken ? (
+          <>
+            <a href={`/b/${success.receiptToken}`} className="min-h-12 rounded-2xl bg-[var(--olive)] px-5 py-3 font-black text-[var(--paper)]">
+              عرض تفاصيل الطلب
+            </a>
+            <a href={`/b/${success.receiptToken}/print`} className="min-h-12 rounded-2xl border border-[var(--border)] bg-white px-5 py-3 font-black text-[var(--olive)]">
+              طباعة بطاقة الحجز / حفظ PDF
+            </a>
+          </>
+        ) : null}
+      </div>
+    </Card>
+      <StudentGalleryStrip items={visuals.gallery} title="من عالم WARKA" />
     </div>
   );
 }
@@ -203,6 +238,7 @@ function FieldRenderer({
   value,
   files,
   error,
+  prioritizeImages = false,
   onChange,
   onFiles
 }: {
@@ -210,14 +246,20 @@ function FieldRenderer({
   value: unknown;
   files: UploadedFile[];
   error?: string;
+  prioritizeImages?: boolean;
   onChange: (value: unknown) => void;
   onFiles: (files: UploadedFile[]) => void;
 }) {
+  const lockedOption = field.options?.find((option) => option.value === value) ?? field.options?.[0];
   return (
     <div>
       <FieldLabel required={field.required}>{field.label}</FieldLabel>
       {field.description ? <p className="mb-3 text-sm leading-7 text-[var(--muted)]">{field.description}</p> : null}
-      {field.locked ? (
+      {field.locked && isUniformProductKey(field.key) ? (
+        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
+          <LockKeyhole size={13} /> اختيار موحد للدفعة
+        </p>
+      ) : field.locked && field.type === "read_only" ? null : field.locked ? (
         <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
           <LockKeyhole size={13} /> خيار مقفل من الإدارة
         </p>
@@ -227,6 +269,7 @@ function FieldRenderer({
         <TextInput
           type={field.type === "number" ? "number" : "text"}
           inputMode={field.type === "phone" ? "tel" : undefined}
+          dir={field.type === "phone" ? "ltr" : undefined}
           placeholder={field.placeholder}
           value={String(value ?? "")}
           disabled={field.locked}
@@ -260,7 +303,30 @@ function FieldRenderer({
           ))}
         </div>
       ) : null}
-      {["radio", "select", "image_choice"].includes(field.type) && field.options ? (
+      {field.locked && ["radio", "select", "image_choice"].includes(field.type) ? (
+        <div className="overflow-hidden rounded-[1.4rem] border border-[var(--olive)] bg-white">
+          {lockedOption && (field.showOptionImages || field.type === "image_choice") && lockedOption.imageUrl ? (
+            <OptimizedThumb
+              src={lockedOption.imageUrl}
+              alt={lockedOption.imageAlt || lockedOption.label}
+              sizes="(max-width: 768px) 100vw, 640px"
+              eager={prioritizeImages}
+            />
+          ) : null}
+          <div className="p-4">
+            <p className="text-base font-black leading-7 text-[var(--olive-dark)]">
+              {lockedOption?.label ?? String(value ?? "")}
+            </p>
+            {lockedOption?.description ? (
+              <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{lockedOption.description}</p>
+            ) : null}
+            <p className="mt-3 inline-flex rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
+              اختيار موحد للدفعة
+            </p>
+            <p className="mt-2 text-xs text-[var(--muted)]">محدد من قبل مسؤول الدفعة</p>
+          </div>
+        </div>
+      ) : ["radio", "select", "image_choice"].includes(field.type) && field.options ? (
         <div
           className={cn(
             "grid gap-3",
@@ -269,11 +335,9 @@ function FieldRenderer({
         >
           {field.options
             .filter((option) => option.enabled !== false)
-            .flatMap((option) => {
-              const optionChildren = (option.children?.length ? option.children : [option]).filter(
-                (child) => child.enabled !== false
-              );
-              return optionChildren.map((child) => {
+            .flatMap((option, optionIndex) => {
+              const optionChildren = (option.children?.length ? option.children : [option]).filter((child) => child.enabled !== false);
+              return optionChildren.map((child, childIndex) => {
                 const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
                 const selected = value === child.value;
                 const showImages = Boolean(field.showOptionImages || field.type === "image_choice");
@@ -286,36 +350,40 @@ function FieldRenderer({
                     aria-pressed={selected}
                     onClick={() => onChange(child.value)}
                     className={cn(
-                      "overflow-hidden rounded-3xl border bg-white text-right transition",
-                      selected ? "border-[var(--olive)] ring-4 ring-[#3f472d14]" : "border-[var(--border)]",
+                      "overflow-hidden rounded-[1.4rem] border bg-[var(--paper)] text-right shadow-[0_10px_30px_rgba(37,43,28,0.05)] transition",
+                      selected ? "border-[var(--olive)] ring-4 ring-[#3f472d18]" : "border-[var(--border)]",
                       field.locked && "opacity-90"
                     )}
                   >
                     {showImages ? (
                       image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <OptimizedThumb
                           src={image}
                           alt={child.imageAlt || label}
-                          className="aspect-[4/3] w-full bg-[#3f472d08] object-contain p-2"
+                          sizes="(max-width: 640px) 100vw, 50vw"
+                          eager={prioritizeImages && optionIndex === 0 && childIndex === 0}
                         />
                       ) : (
-                        <div className="grid aspect-[4/3] place-items-center bg-[#3f472d08] px-4 text-center text-sm font-bold text-[var(--muted)]">
-                          لم تتم إضافة صورة
+                        <div className="grid aspect-[4/3] place-items-center bg-[#f3ead6] px-4 text-center text-sm font-bold text-[var(--muted)]">
+                          صورة الخيار ستظهر بعد رفع المالك للصورة المرجعية
                         </div>
                       )
                     ) : null}
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <span className="text-base font-black text-[var(--olive-dark)]">{label}</span>
+                        <span className="text-base font-black leading-7 text-[var(--olive-dark)]">{label}</span>
                         <span
                           className={cn(
-                            "mt-1 h-5 w-5 shrink-0 rounded-full border-2",
-                            selected ? "border-[var(--olive)] bg-[var(--olive)]" : "border-[var(--border)]"
+                            "mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-full border-2",
+                            selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
                           )}
-                        />
+                        >
+                          {selected ? <Check size={12} /> : null}
+                        </span>
                       </div>
-                      {child.description ? (
+                      {(child.description || option.description) && child.id === option.id ? (
+                        <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description || option.description}</span>
+                      ) : child.description ? (
                         <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span>
                       ) : null}
                     </div>
@@ -328,71 +396,50 @@ function FieldRenderer({
       {["image_upload", "file_upload"].includes(field.type) ? (
         <MultipleImageUpload
           fieldKey={field.key}
-          label={field.label}
+          label="الصورة المرفقة من الطالب"
           accept={field.accept}
           multiple={field.uploadMode === "multiple"}
-          maxFiles={field.uploadMode === "multiple" ? field.maxFiles ?? 5 : 1}
+          maxFiles={field.uploadMode === "multiple" ? Math.min(field.maxFiles ?? 5, 5) : 1}
           value={files}
           onChange={onFiles}
           error={error}
         />
       ) : null}
-      {error && !["image_upload", "file_upload"].includes(field.type) ? <p className="mt-2 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
+      {error && !["image_upload", "file_upload"].includes(field.type) ? (
+        <p className="mt-2 text-sm font-bold text-[var(--danger)]">{error}</p>
+      ) : null}
     </div>
   );
 }
 
 function ReviewStep({
-  sections,
+  form,
   answers,
   files,
   pending,
   onBack,
   onSubmit,
-  onPreview,
   error
 }: {
-  sections: FormSection[];
+  form: BookingFormRecord;
   answers: Record<string, unknown>;
   files: Record<string, UploadedFile[]>;
   pending: boolean;
   onBack: () => void;
   onSubmit: () => void;
-  onPreview: (url: string) => void;
   error?: string;
 }) {
+  const flatFiles = Object.entries(files).flatMap(([fieldKey, entries]) =>
+    entries.map((file) => ({ ...file, fieldKey, field_key: fieldKey }))
+  );
+  const sections = buildLiveOrderSections(form.definition, answers, flatFiles);
+
   return (
-    <Card className="!rounded-[1.5rem]">
-      <h2 className="text-3xl font-black text-[var(--olive-dark)]">مراجعة طلبك</h2>
-      <p className="mt-2 text-[var(--muted)]">تأكد من الاختيارات قبل إرسال الحجز النهائي.</p>
-      <div className="mt-6 grid gap-4">
-        {sections.map((section) => (
-          <div key={section.id} className="rounded-3xl bg-white/55 p-4">
-            <h3 className="mb-3 font-black text-[var(--olive)]">{section.title}</h3>
-            <dl className="grid gap-3">
-              {section.fields.filter((field) => fieldIsVisible(field, answers)).map((field) => (
-                <div key={field.id}>
-                  {["image_upload", "file_upload"].includes(field.type) ? (
-                    <div>
-                      <p className="mb-2 text-sm font-bold text-[var(--muted)]">{field.label}</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(files[field.key] ?? []).map((file) => (
-                          <button key={file.path} type="button" onClick={() => onPreview(file.previewUrl ?? file.path)} className="overflow-hidden rounded-xl border border-[var(--border)]">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={file.previewUrl ?? file.path} alt="" className="aspect-square w-full object-cover" />
-                          </button>
-                        ))}
-                        {!files[field.key]?.length ? <p className="text-sm text-[var(--muted)]">لا توجد صور</p> : null}
-                      </div>
-                    </div>
-                  ) : (
-                    <SummaryRow label={field.label} value={optionLabel(field.options, answers[field.key])} />
-                  )}
-                </div>
-              ))}
-            </dl>
-          </div>
-        ))}
+    <Card className="!rounded-[1.35rem]">
+      <h2 className="text-3xl font-black text-[var(--olive-dark)]">مراجعة الطلب</h2>
+      <p className="mt-2 text-[var(--muted)]">راجع كل اختيار وصورة مرجعية ومرفق قبل الإرسال. يمكنك الرجوع للتعديل دون فقدان البيانات.</p>
+      <div className="mt-6">
+        <OrderVisual sections={sections} />
       </div>
       {error ? <p className="mt-4 rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
       <div className="mt-6 grid gap-3">
@@ -402,6 +449,9 @@ function ReviewStep({
         <Button className="min-h-12 w-full" disabled={pending} onClick={onSubmit}>
           {pending ? <Loader2 className="inline animate-spin" size={16} /> : null} تأكيد وإرسال الطلب
         </Button>
+        <p className="text-center text-xs leading-6 text-[var(--muted)]">
+          بإرسال الطلب، أؤكد صحة المعلومات وأوافق على استخدام البيانات والتصاميم المرفقة لغرض تجهيز الطلب.
+        </p>
       </div>
     </Card>
   );

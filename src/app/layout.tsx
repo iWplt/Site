@@ -4,8 +4,12 @@ import "./globals.css";
 
 const warkaFont = Noto_Kufi_Arabic({
   subsets: ["arabic"],
+  weight: ["400", "700", "900"],
   variable: "--font-warka",
-  display: "swap"
+  display: "swap",
+  preload: true,
+  fallback: ["Tahoma", "Arial", "sans-serif"],
+  adjustFontFallback: true
 });
 
 export const metadata: Metadata = {
@@ -14,7 +18,11 @@ export const metadata: Metadata = {
     template: "%s | WARKA"
   },
   description:
-    "نظام WARKA لإدارة حجوزات ملابس التخرج والدفعات والطلبات والرموز الخاصة بالطلاب."
+    "نظام WARKA لإدارة حجوزات ملابس التخرج والدفعات والطلبات والرموز الخاصة بالطلاب.",
+  icons: {
+    icon: [{ url: "/brand/warka-logo-icon-transparent.png", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png" }]
+  }
 };
 
 export const viewport: Viewport = {
@@ -29,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={warkaFont.variable}>
+    <html lang="ar" dir="rtl" className={`${warkaFont.variable} ${warkaFont.className}`}>
       <body>{children}</body>
     </html>
   );

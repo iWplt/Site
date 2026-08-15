@@ -2,25 +2,13 @@ import Link from "next/link";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export function LogoMark() {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--olive)] text-lg font-black text-[var(--paper)] shadow-lg">
-        W
-      </div>
-      <div>
-        <p className="text-xs uppercase tracking-[0.4em] text-[var(--gold)] ltr">WARKA</p>
-        <p className="font-bold text-[var(--olive-dark)]">Graduation&apos;s clothing store</p>
-      </div>
-    </div>
-  );
-}
+export { BrandIcon, LogoMark } from "@/components/brand-logo";
 
 export function Button({
   className,
   variant = "primary",
   ...props
-}: ComponentPropsWithoutRef<"button"> & { variant?: "primary" | "secondary" | "ghost" }) {
+}: ComponentPropsWithoutRef<"button"> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
   return (
     <button
       className={cn(
@@ -28,6 +16,7 @@ export function Button({
         variant === "primary" && "bg-[var(--olive)] text-[var(--paper)] shadow-lg shadow-[#252b1c22] hover:bg-[var(--olive-dark)]",
         variant === "secondary" && "border border-[var(--border)] bg-[var(--paper)] text-[var(--olive)] hover:bg-white",
         variant === "ghost" && "text-[var(--olive)] hover:bg-[rgba(63,71,45,0.08)]",
+        variant === "danger" && "bg-[var(--danger)] text-white shadow-lg shadow-[#9d2f2f22] hover:bg-[#7d2424]",
         className
       )}
       {...props}

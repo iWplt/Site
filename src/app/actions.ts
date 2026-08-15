@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AUTH_COOKIE, requireUser, type AppUser } from "@/lib/auth";
+import { AUTH_COOKIE, getCurrentUser, requireUser, type AppUser } from "@/lib/auth";
 import { previewPastedNames, analyzeWorkbook } from "@/lib/imports";
 import {
   assertBatchAccess,
   audit,
   createAccessCode,
   createBatchRecord,
+  deleteStudentRecords,
   mutateDb,
   nextBookingNumber,
   readDb,
@@ -19,6 +20,9 @@ import {
   type LocalDatabase
 } from "@/lib/store/local-db";
 import { accessCodeFingerprint, signBookingSession, verifyBookingSession } from "@/lib/security";
+import { getAccessCodeFingerprintScope } from "@/lib/access-code-scope";
+import { signBookingReceipt } from "@/lib/booking-receipt";
+import { answersWithSnapshot, buildOrderSnapshot } from "@/lib/order-snapshot";
 import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/lib/validation";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
@@ -28,7 +32,9 @@ import {
   sbAssignRepresentativeBatches,
   sbCreateBatch,
   sbCreateForm,
+  sbCreateIndividualStudent,
   sbCreateRepresentative,
+  sbDeleteStudents,
   sbDuplicateForm,
   sbExportBatchStudentsCsv,
   sbGetStudentCard,
@@ -38,6 +44,7 @@ import {
   sbLogout,
   sbRegenerateStudentCode,
   sbReopenSubmission,
+  sbSaveFixedOptions,
   sbSetAccessCodeStatus,
   sbSetFormStatus,
   sbSubmitBooking,
@@ -46,14 +53,22 @@ import {
   sbUpdateFormOption,
   sbUpdateFormUploadSettings,
   sbUpdateOrderStatus,
-  sbVerifyAccessCode
+  sbUpdateStudent,
+  sbVerifyAccessCode,
+  sbConfirmPickupDelivery
 } from "@/lib/store/supabase-db";
+import { parseUniformFormData } from "@/lib/form-uniform";
+import { OPTION_IMAGE_MIMES, sniffAllowedMime } from "@/lib/upload-security";
+import {
+  ACCESS_CODE_RATE_LIMIT_MESSAGE,
+  clientRateBucket,
+  guardAccessCodeAttempt
+} from "@/lib/access-code-rate-limit";
 import type { AccessCodeStatus, Batch, BatchStatus, FormOption, FormStatus, OrderStatus } from "@/lib/types";
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
 
-const ALLOWED_OPTION_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const MAX_OPTION_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function revalidateAdmin(batchId?: string) {
@@ -196,17 +211,29 @@ export async function verifyAccessCodeAction(_state: { error?: string } | undefi
   });
   if (!parsed.success) return { error: "رمز الحجز غير صحيح أو غير متاح." };
   const { slug, code } = parsed.data;
+  const bucket = await clientRateBucket(slug);
+  const precheck = await guardAccessCodeAttempt(bucket, "check");
+  if (precheck.limited) return { error: ACCESS_CODE_RATE_LIMIT_MESSAGE };
 
   let mode: PersistenceMode;
   try {
     mode = assertPersistenceAllowed();
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "رمز الحجز غير صحيح أو غير متاح." };
+  } catch {
+    return { error: "رمز الحجز غير صحيح أو غير متاح." };
+  }
+
+  async function reject(error: string, kind: "invalid" | "used") {
+    const fail = await guardAccessCodeAttempt(bucket, "fail");
+    if (fail.limited) return { error: ACCESS_CODE_RATE_LIMIT_MESSAGE };
+    return { error: kind === "used" ? "تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح." : error };
   }
 
   if (mode === "supabase") {
     const result = await sbVerifyAccessCode(slug, code);
-    if (!result.ok) return { error: result.error };
+    if (!result.ok) {
+      return reject("رمز الحجز غير صحيح أو غير متاح.", result.error.includes("استخدام") ? "used" : "invalid");
+    }
+    await guardAccessCodeAttempt(bucket, "success");
 
     const cookieStore = await cookies();
     cookieStore.set(bookingCookie, result.token, {
@@ -220,27 +247,29 @@ export async function verifyAccessCodeAction(_state: { error?: string } | undefi
 
   const db = readDb();
   const form = db.forms.find((entry) => entry.slug === slug && entry.status === "published");
-  if (!form) return { error: "رمز الحجز غير صحيح أو غير متاح." };
+  if (!form) return reject("رمز الحجز غير صحيح أو غير متاح.", "invalid");
 
-  const fingerprint = accessCodeFingerprint(code, form.batch_id ?? form.id);
+  const fingerprint = accessCodeFingerprint(code, getAccessCodeFingerprintScope(form));
   const accessCode = db.access_codes.find(
     (entry) => entry.form_id === form.id && entry.code_fingerprint === fingerprint
   );
-  if (!accessCode) return { error: "رمز الحجز غير صحيح أو غير متاح." };
+  if (!accessCode) return reject("رمز الحجز غير صحيح أو غير متاح.", "invalid");
   if (accessCode.status === "USED") {
-    return { error: "تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح." };
+    return reject("تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح.", "used");
   }
-  if (accessCode.status !== "ACTIVE") return { error: "رمز الحجز غير صحيح أو غير متاح." };
+  if (accessCode.status !== "ACTIVE") return reject("رمز الحجز غير صحيح أو غير متاح.", "invalid");
 
   const student = db.students.find((entry) => entry.id === accessCode.student_id);
   if (!student || student.batch_id !== accessCode.batch_id) {
-    return { error: "رمز الحجز غير صحيح أو غير متاح." };
+    return reject("رمز الحجز غير صحيح أو غير متاح.", "invalid");
   }
 
   const existing = db.submissions.find(
     (entry) => entry.student_id === student.id && entry.form_id === form.id && entry.is_current
   );
-  if (existing) return { error: "تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح." };
+  if (existing) return reject("تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح.", "used");
+
+  await guardAccessCodeAttempt(bucket, "success");
 
   const cookieStore = await cookies();
   cookieStore.set(
@@ -276,7 +305,7 @@ export async function submitBookingAction(input: unknown) {
       if (!result.ok) return result;
       cookieStore.delete(bookingCookie);
       revalidateAdmin(session.batchId);
-      return result;
+      return { ...result, receiptToken: signBookingReceipt({ submissionId: result.submissionId, bookingNumber: result.bookingNumber }) };
     }
 
     const result = mutateDb((db) => {
@@ -302,6 +331,14 @@ export async function submitBookingAction(input: unknown) {
         throw new Error("يرجى مراجعة الحقول المطلوبة.");
       }
 
+      const snapshot = buildOrderSnapshot({
+        formId: form.id,
+        formName: form.name,
+        definition: form.definition ?? defaultWarkaFormDefinition,
+        answers
+      });
+      const persistedAnswers = answersWithSnapshot(answers, snapshot);
+
       const bookingNumber = nextBookingNumber(db, session.batchId);
       const submissionId = randomUUID();
       const submittedAt = new Date().toISOString();
@@ -315,7 +352,7 @@ export async function submitBookingAction(input: unknown) {
         booking_number: bookingNumber,
         status: "SUBMITTED",
         is_current: true,
-        answers,
+        answers: persistedAnswers,
         submitted_at: submittedAt
       });
 
@@ -366,12 +403,76 @@ export async function submitBookingAction(input: unknown) {
 
     cookieStore.delete(bookingCookie);
     revalidateAdmin(session.batchId);
-    return { ok: true as const, ...result };
+    return {
+      ok: true as const,
+      ...result,
+      receiptToken: signBookingReceipt({ submissionId: result.submissionId, bookingNumber: result.bookingNumber })
+    };
   } catch (error) {
     return {
       ok: false as const,
       error: error instanceof Error ? error.message : "تعذر حفظ الحجز، يرجى المحاولة مرة أخرى."
     };
+  }
+}
+
+export async function createIndividualStudentAction(
+  _state: { error?: string; code?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireUser(["OWNER"]);
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  if (!fullName) return { error: "اسم الطالب مطلوب." };
+  const phone = String(formData.get("phone") ?? "").trim() || undefined;
+  const address = String(formData.get("address") ?? "").trim() || undefined;
+  const notes = String(formData.get("notes") ?? "").trim() || undefined;
+  const uniform = parseUniformFormData(formData);
+
+  try {
+    if (assertPersistenceAllowed() !== "supabase") {
+      return { error: "إنشاء الطلاب الفرديين متاح في وضع Supabase فقط." };
+    }
+    const created = await sbCreateIndividualStudent(user, { full_name: fullName, phone, address, notes, uniform });
+    revalidateAdmin();
+    return { code: created.code };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر إنشاء الطالب الفردي." };
+  }
+}
+
+export async function updateStudentAction(_state: { error?: string; success?: boolean } | undefined, formData: FormData) {
+  const user = await requireUser();
+  const studentId = String(formData.get("student_id") ?? "").trim();
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  if (!studentId || !fullName) return { error: "بيانات الطالب غير مكتملة." };
+  try {
+    if (assertPersistenceAllowed() !== "supabase") return { error: "التعديل متاح في وضع Supabase فقط." };
+    await sbUpdateStudent(user, studentId, {
+      full_name: fullName,
+      phone: String(formData.get("phone") ?? "").trim() || undefined,
+      address: String(formData.get("address") ?? "").trim() || undefined,
+      notes: String(formData.get("notes") ?? "").trim() || undefined,
+      uniform: parseUniformFormData(formData)
+    });
+    revalidateAdmin();
+    revalidatePath(`/admin/students/${studentId}`);
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر تحديث الطالب." };
+  }
+}
+
+export async function saveBatchUniformAction(_state: { error?: string; success?: boolean } | undefined, formData: FormData) {
+  const user = await requireUser();
+  const formId = String(formData.get("form_id") ?? "").trim();
+  if (!formId) return { error: "النموذج غير موجود." };
+  try {
+    if (assertPersistenceAllowed() !== "supabase") return { error: "حفظ الزي الموحد متاح في وضع Supabase فقط." };
+    await sbSaveFixedOptions(user, { formId, studentId: null, map: parseUniformFormData(formData) });
+    revalidateAdmin();
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر حفظ الزي الموحد." };
   }
 }
 
@@ -400,7 +501,8 @@ export async function createBatchAction(_state: { error?: string; success?: bool
     graduation_year: graduationYear,
     description: description || undefined,
     representative_id: representativeId,
-    status
+    status,
+    uniform: parseUniformFormData(formData)
   };
 
   try {
@@ -423,10 +525,11 @@ export async function createRepresentativeAction(_state: { error?: string } | un
   const fullName = String(formData.get("full_name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "").trim() || "rep123";
+  const password = String(formData.get("password") ?? "").trim();
   const batchIds = formData.getAll("batch_ids").map(String);
 
   if (!fullName || !email) return { error: "الاسم والبريد مطلوبان." };
+  if (password.length < 8) return { error: "كلمة المرور يجب أن تتكون من 8 أحرف على الأقل." };
 
   try {
     if (assertPersistenceAllowed() === "supabase") {
@@ -523,7 +626,10 @@ export async function importStudentsAction(batchId: string, names: string[]) {
     if (assertPersistenceAllowed() === "supabase") {
       const result = await sbImportStudents(user, batchId, cleaned);
       if ("error" in result && result.error) return { error: result.error };
+      revalidateAdmin(batchId);
+      return { success: true as const, imported: "imported" in result ? result.imported : cleaned.length };
     } else {
+      let imported = 0;
       mutateDb((db) => {
         assertBatchAccess(db, user, batchId);
         const form = db.forms.find((entry) => entry.batch_id === batchId);
@@ -543,14 +649,51 @@ export async function importStudentsAction(batchId: string, names: string[]) {
           });
           if (form) createAccessCode(db, studentId, batchId, form.id);
           existing.add(fullName);
+          imported += 1;
         }
-        audit(db, "STUDENTS_IMPORTED", "batch", batchId, { id: user.id, label: user.fullName }, { count: cleaned.length });
+        audit(db, "STUDENTS_IMPORTED", "batch", batchId, { id: user.id, label: user.fullName }, { count: imported });
       });
+      revalidateAdmin(batchId);
+      return { success: true as const, imported };
     }
-    revalidateAdmin(batchId);
-    return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "تعذر استيراد الطلاب." };
+  }
+}
+
+export async function deleteStudentsAction(studentIds: string[]) {
+  const user = await getCurrentUser();
+  if (!user) return { error: "يجب تسجيل الدخول أولاً.", deleted: 0, deletedIds: [] as string[], blocked: [] as Array<{ id: string; name: string }>, rejected: studentIds.length, message: "يجب تسجيل الدخول أولاً." };
+
+  try {
+    if (assertPersistenceAllowed() === "supabase") {
+      const result = await sbDeleteStudents(user, studentIds);
+      revalidateAdmin();
+      return result;
+    }
+
+    const result = mutateDb((db) => deleteStudentRecords(db, user, studentIds));
+    revalidateAdmin();
+    const parts: string[] = [];
+    if (result.deleted) parts.push(result.deleted === 1 ? "تم حذف طالب واحد." : `تم حذف ${result.deleted} طلاب.`);
+    if (result.blocked.length) {
+      parts.push(
+        result.blocked.length === 1
+          ? "لا يمكن حذف هذا الطالب لوجود طلب مسجل. يمكن أرشفته بدلاً من ذلك."
+          : `لم يُحذف ${result.blocked.length} طلاب لوجود طلب مسجل.`
+      );
+    }
+    if (result.rejected) parts.push("رُفضت بعض المعرّفات لأنها غير صالحة أو غير مصرح بها.");
+    return { ...result, message: parts.join(" ") || "لم يتم حذف أي طالب." };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "تعذر حذف الطلاب.",
+      deleted: 0,
+      deletedIds: [] as string[],
+      blocked: [] as Array<{ id: string; name: string }>,
+      rejected: studentIds.length,
+      message: error instanceof Error ? error.message : "تعذر حذف الطلاب."
+    };
   }
 }
 
@@ -606,7 +749,9 @@ export async function regenerateStudentCodeAction(studentId: string) {
       const student = db.students.find((entry) => entry.id === studentId);
       if (!student) throw new Error("الطالب غير موجود.");
       assertBatchAccess(db, user, student.batch_id);
-      const form = db.forms.find((entry) => entry.batch_id === student.batch_id);
+      const form = student.batch_id
+        ? db.forms.find((entry) => entry.batch_id === student.batch_id)
+        : db.forms.find((entry) => entry.slug === "individual");
       if (!form) throw new Error("لا يوجد نموذج مرتبط بهذه الدفعة.");
       for (const accessCode of db.access_codes) {
         if (accessCode.student_id === studentId && accessCode.status === "ACTIVE") {
@@ -871,9 +1016,6 @@ export async function uploadFormOptionImageAction(formData: FormData) {
   if (!formId || !fieldKey || !optionId || !(file instanceof File)) {
     return { error: "بيانات الصورة غير مكتملة." };
   }
-  if (!ALLOWED_OPTION_IMAGE_TYPES.has(file.type)) {
-    return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
-  }
   if (file.size > MAX_OPTION_IMAGE_BYTES) {
     return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
   }
@@ -881,12 +1023,14 @@ export async function uploadFormOptionImageAction(formData: FormData) {
   try {
     const mode = assertPersistenceAllowed();
     const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
+    if (!mimeType) {
+      return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+    }
 
-    // In supabase mode `storeOptionImage` already persists imagePath/imageUrl on the
-    // form definition via `sbUploadOptionImage`; in local mode we still own that write.
     const stored = await storeOptionImage(formId, fieldKey, optionId, {
       buffer,
-      mimeType: file.type,
+      mimeType,
       originalName: file.name
     });
 
@@ -989,13 +1133,15 @@ export async function exportBatchStudentsCsvAction(batchId: string) {
   };
 }
 
-export async function ensureDevOwnerSession() {
-  // Used by login page helper buttons in local mode.
-  return {
-    owner: { email: "owner@warka.local", password: "owner123" },
-    repA: { email: "rep.cyber@warka.local", password: "rep123" },
-    repB: { email: "rep.dental@warka.local", password: "rep123" }
-  };
+export async function confirmPickupDeliveryAction(token: string) {
+  const user = await getCurrentUser();
+  if (!user) return { error: "يجب تسجيل الدخول أولاً." };
+  if (assertPersistenceAllowed() !== "supabase") return { error: "التسليم متاح في وضع Supabase فقط." };
+  const result = await sbConfirmPickupDelivery(user, token);
+  revalidatePath("/admin/pickup");
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  return result;
 }
 
 export type { AppUser };

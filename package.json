@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "description": "WARKA full-stack graduation clothing booking and batch management system.",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run lint"
+    "test": "npm run typecheck && npm run lint",
+    "test:access-codes": "node scripts/access-code-fingerprint-regression.mjs"
   },
   "repository": {
     "type": "git",
@@ -30,6 +34,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.31.0",
     "next": "^16.3.1",
+    "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.85.0",
@@ -40,6 +45,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "eslint": "^9.39.5",

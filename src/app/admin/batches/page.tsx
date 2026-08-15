@@ -1,4 +1,5 @@
 import { Badge, Card, LinkButton } from "@/components/ui";
+import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth";
 import { listBatches } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
@@ -8,11 +9,11 @@ export default async function BatchesPage() {
   const batches = await listBatches(user);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold text-[var(--gold)]">Batch Management</p>
-          <h1 className="text-4xl font-black text-[var(--olive-dark)]">إدارة الدفعات</h1>
+          <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">إدارة الدفعات</h1>
         </div>
         {user.role === "OWNER" ? <LinkButton href="/admin/batches/new">إنشاء دفعة جديدة</LinkButton> : null}
       </div>
@@ -42,7 +43,14 @@ export default async function BatchesPage() {
             </div>
           </Card>
         ))}
-        {!batches.length ? <Card>لا توجد دفعات بعد.</Card> : null}
+        {!batches.length ? (
+          <EmptyState
+            title="لا توجد دفعات بعد"
+            description="أنشئ دفعة لبدء استيراد الطلاب وفتح بطاقة الحجز."
+            actionHref={user.role === "OWNER" ? "/admin/batches/new" : undefined}
+            actionLabel={user.role === "OWNER" ? "إنشاء دفعة" : undefined}
+          />
+        ) : null}
       </div>
     </div>
   );

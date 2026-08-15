@@ -7,10 +7,9 @@ export default async function AuditPage() {
   await requireUser(["OWNER"]);
   const events = await listAuditLogs();
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 sm:gap-6">
       <div>
-        <p className="text-sm font-bold text-[var(--gold)]">Security Audit Trail</p>
-        <h1 className="text-4xl font-black text-[var(--olive-dark)]">سجل التدقيق</h1>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">سجل التدقيق</h1>
       </div>
       <Card>
         <div className="grid gap-3">

@@ -16,7 +16,7 @@ export function AccessCodeForm({ slug }: { slug: string }) {
         inputMode="numeric"
         autoComplete="one-time-code"
         maxLength={10}
-        className="ltr rounded-3xl border border-[var(--border)] bg-white/85 px-5 py-4 text-center text-3xl font-black tracking-[0.3em] text-[var(--olive-dark)] outline-none focus:border-[var(--olive)] focus:ring-4 focus:ring-[#3f472d18]"
+        className="ltr w-full rounded-3xl border border-[var(--border)] bg-white/85 px-4 py-4 text-center text-2xl font-black tracking-[0.18em] text-[var(--olive-dark)] outline-none focus:border-[var(--olive)] focus:ring-4 focus:ring-[#3f472d18] sm:text-3xl sm:tracking-[0.3em]"
         placeholder="000000"
       />
       {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}

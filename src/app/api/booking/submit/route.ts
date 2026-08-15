@@ -12,6 +12,8 @@ export async function POST(request: Request) {
     studentName: result.studentName,
     status: result.status,
     submittedAt: result.submittedAt,
-    submissionId: result.submissionId
+    submissionId: result.submissionId,
+    receiptToken: result.receiptToken,
+    batchName: "batchName" in result ? result.batchName : undefined
   });
 }

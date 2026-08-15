@@ -5,25 +5,36 @@ import { redirect } from "next/navigation";
 import { hasSupabaseConfig } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { readDb } from "@/lib/store/local-db";
-import type { Role } from "@/lib/types";
+import type { Role, AppUser } from "@/lib/types";
 
-export type AppUser = {
-  id: string;
-  email?: string;
-  role: Role;
-  fullName: string;
-  batchIds?: string[];
-};
+export type { AppUser };
 
 const AUTH_COOKIE = "warka_admin_session";
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function getCurrentUser(): Promise<AppUser | null> {
   if (hasSupabaseConfig()) {
     const supabase = await createClient();
     if (!supabase) return null;
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+    const authResult = await withTimeout(
+      supabase.auth.getUser(),
+      4000,
+      { data: { user: null }, error: null } as unknown as Awaited<ReturnType<typeof supabase.auth.getUser>>
+    );
+    const user = authResult.data.user;
     if (!user) return null;
     const { data: profile } = await supabase
       .from("profiles")

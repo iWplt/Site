@@ -10,6 +10,7 @@ import {
   regenerateStudentCodeAction,
   setAccessCodeStatusAction
 } from "@/app/actions";
+import { StudentManageList } from "@/components/student-manage-list";
 import { Badge, Button, Card, TextArea, TextInput } from "@/components/ui";
 import { statusLabels } from "@/lib/demo-data";
 import type { ExcelWorkbookPreview, StudentWithState } from "@/lib/types";
@@ -84,7 +85,9 @@ export function BatchStudentsPanel({
                 startTransition(async () => {
                   const names = paste.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
                   const result = await importStudentsAction(batchId, names);
-                  setMessage(result.error ?? `تم استيراد ${names.length} اسم إلى هذه الدفعة فقط.`);
+                  setMessage(
+                    result.error ?? `تم استيراد ${"imported" in result ? result.imported : names.length} اسم إلى هذه الدفعة فقط.`
+                  );
                   setPaste("");
                   router.refresh();
                 })
@@ -158,7 +161,10 @@ export function BatchStudentsPanel({
                     startTransition(async () => {
                       if (!columnKey) return;
                       const result = await importExcelColumnAction(batchId, activeSheet.rows, columnKey);
-                      setMessage(result.error ?? "تم استيراد الأسماء من Excel إلى هذه الدفعة.");
+                      setMessage(
+                        result.error ??
+                          `تم استيراد ${"imported" in result ? result.imported : 0} اسماً من Excel إلى هذه الدفعة.`
+                      );
                       router.refresh();
                     })
                   }
@@ -173,9 +179,11 @@ export function BatchStudentsPanel({
 
       {message ? <p className="rounded-2xl bg-[#3f472d12] p-3 text-sm font-bold text-[var(--olive)]">{message}</p> : null}
 
-      <div className="grid gap-3">
-        {filtered.map((student) => (
-          <Card key={student.id} className="!rounded-[1.5rem]">
+      <StudentManageList
+        students={filtered}
+        empty={<Card>لم تتم إضافة طلاب لهذه الدفعة حتى الآن.</Card>}
+        renderDetails={(student) => (
+          <>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-xl font-black text-[var(--olive-dark)]">{student.full_name}</h3>
               <Badge>{statusLabels[student.code_status ?? "ACTIVE"]}</Badge>
@@ -184,12 +192,12 @@ export function BatchStudentsPanel({
               </Badge>
             </div>
             <p className="mt-2 text-sm text-[var(--muted)]">{student.phone ?? "لا يوجد هاتف"}</p>
-            <div className="mt-3 inline-flex rounded-2xl bg-[#3f472d0d] px-4 py-2 text-xl font-black tracking-[0.18em] ltr">
+            <div className="mt-3 inline-flex max-w-full rounded-2xl bg-[#3f472d0d] px-4 py-2 text-xl font-black tracking-[0.18em] ltr">
               {student.code ?? "------"}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Button
-                className="min-h-11"
+                className="min-h-12"
                 variant="secondary"
                 onClick={async () => {
                   if (student.code) {
@@ -201,7 +209,7 @@ export function BatchStudentsPanel({
                 نسخ الرمز
               </Button>
               <Button
-                className="min-h-11"
+                className="min-h-12"
                 variant="secondary"
                 disabled={isPending}
                 onClick={() =>
@@ -215,7 +223,7 @@ export function BatchStudentsPanel({
                 تغيير الرمز
               </Button>
               <Button
-                className="min-h-11"
+                className="min-h-12"
                 variant="secondary"
                 disabled={isPending}
                 onClick={() =>
@@ -228,17 +236,16 @@ export function BatchStudentsPanel({
                 {student.code_status === "DISABLED" ? "تفعيل" : "تعطيل"}
               </Button>
               {student.booking_number ? (
-                <Button className="min-h-11" variant="ghost" onClick={() => router.push(`/admin/orders?q=${student.booking_number}`)}>
+                <Button className="min-h-12" variant="ghost" onClick={() => router.push(`/admin/orders?q=${student.booking_number}`)}>
                   عرض الحجز
                 </Button>
               ) : (
                 <div />
               )}
             </div>
-          </Card>
-        ))}
-        {!filtered.length ? <Card>لم تتم إضافة طلاب لهذه الدفعة حتى الآن.</Card> : null}
-      </div>
+          </>
+        )}
+      />
     </div>
   );
 }

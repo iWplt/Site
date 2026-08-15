@@ -2,6 +2,12 @@
 
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { useState } from "react";
+import { optimizeStudentImage } from "@/lib/optimize-student-image";
+import {
+  STUDENT_UPLOAD_MAX_BYTES,
+  STUDENT_UPLOAD_MAX_FILES,
+  STUDENT_UPLOAD_TYPES
+} from "@/lib/upload-limits";
 import { cn } from "@/lib/utils";
 
 export type UploadedFile = {
@@ -26,7 +32,7 @@ type Props = {
 export function MultipleImageUpload({
   fieldKey,
   label,
-  accept = ["image/jpeg", "image/png", "image/webp"],
+  accept = [...STUDENT_UPLOAD_TYPES],
   maxFiles = 1,
   multiple = false,
   value,
@@ -35,13 +41,14 @@ export function MultipleImageUpload({
 }: Props) {
   const [uploading, setUploading] = useState(false);
   const [localError, setLocalError] = useState<string>();
-  const limit = multiple ? maxFiles : 1;
+  const limit = Math.min(multiple ? maxFiles : 1, STUDENT_UPLOAD_MAX_FILES);
+  const maxMb = Math.round(STUDENT_UPLOAD_MAX_BYTES / (1024 * 1024));
 
   async function uploadFiles(fileList: FileList | null) {
     if (!fileList?.length) return;
     const remaining = limit - value.length;
     if (remaining <= 0) {
-      setLocalError(`الحد الأقصى ${limit} صور.`);
+      setLocalError(`الحد الأقصى ${limit} ملفات.`);
       return;
     }
 
@@ -50,11 +57,36 @@ export function MultipleImageUpload({
     try {
       const next = [...value];
       const selected = Array.from(fileList).slice(0, remaining);
-      for (const file of selected) {
-        if (!accept.includes(file.type)) {
-          setLocalError("صيغة الملف غير مدعومة.");
+      for (const original of selected) {
+        const allowed = accept.includes(original.type) || (original.type === "application/pdf" && accept.includes("application/pdf"));
+        if (!allowed) {
+          setLocalError("صيغة الملف غير مدعومة. استخدم JPEG أو PNG أو WebP أو PDF.");
           continue;
         }
+
+        let file = original;
+        try {
+          if (original.type.startsWith("image/")) {
+            file = await optimizeStudentImage(original);
+          } else if (original.size > STUDENT_UPLOAD_MAX_BYTES) {
+            setLocalError(`الملف أكبر من الحد المسموح (${maxMb} ميجابايت).`);
+            continue;
+          }
+        } catch (caught) {
+          const message = caught instanceof Error ? caught.message : "تعذر ضغط الصورة.";
+          if (original.size > STUDENT_UPLOAD_MAX_BYTES) {
+            setLocalError(message);
+            continue;
+          }
+          setLocalError(message);
+          continue;
+        }
+
+        if (file.size > STUDENT_UPLOAD_MAX_BYTES) {
+          setLocalError(`الملف أكبر من الحد المسموح (${maxMb} ميجابايت).`);
+          continue;
+        }
+
         const body = new FormData();
         body.append("file", file);
         body.append("fieldKey", fieldKey);
@@ -80,20 +112,24 @@ export function MultipleImageUpload({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-bold text-[var(--muted)]">{label}</p>
         <p className="text-xs font-bold text-[var(--olive)]">
-          {value.length} / {limit} صور
+          {value.length} / {limit}
         </p>
       </div>
+      <p className="mb-3 text-xs leading-6 text-[var(--muted)]">
+        الصيغ المسموحة: JPEG و PNG و WebP{accept.includes("application/pdf") ? " و PDF" : ""}. الحد {maxMb}{" "}
+        ميجابايت لكل ملف. تُضغط الصور تلقائياً قبل الرفع.
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {value.map((file, index) => (
           <div key={`${file.path}-${index}`} className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={file.previewUrl ?? file.path} alt="" className="aspect-square w-full object-cover" />
+            <img src={file.previewUrl ?? file.path} alt="" className="aspect-square w-full bg-[#f3ead6] object-contain" />
             <button
               type="button"
-              className="absolute left-2 top-2 rounded-full bg-[#9d2f2f] p-2 text-white"
+              className="absolute left-2 top-2 min-h-11 min-w-11 rounded-full bg-[#9d2f2f] p-2 text-white"
               onClick={() => onChange(value.filter((_, i) => i !== index))}
               aria-label="حذف الصورة"
             >
@@ -115,7 +151,10 @@ export function MultipleImageUpload({
               capture="environment"
               multiple={multiple}
               className="hidden"
-              onChange={(event) => uploadFiles(event.target.files)}
+              onChange={(event) => {
+                void uploadFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
             />
           </label>
         ) : null}

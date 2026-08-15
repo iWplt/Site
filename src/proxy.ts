@@ -7,8 +7,9 @@ export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
-  // When Supabase is configured, refresh the Auth session on admin routes so
-  // server components see a valid user after page refresh.
+  // When the public anon key is configured, refresh the Auth session on admin
+  // routes. Do not read SUPABASE_SERVICE_ROLE_KEY here — middleware is bundled
+  // for the Edge runtime and must not embed the service-role secret.
   if (url && anonKey && request.nextUrl.pathname.startsWith("/admin")) {
     const supabase = createServerClient(url, anonKey, {
       cookies: {
