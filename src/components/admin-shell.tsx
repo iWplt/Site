@@ -21,6 +21,7 @@ import {
   X
 } from "lucide-react";
 import { LogoMark } from "@/components/ui";
+import { ViewportGate } from "@/components/viewport-gate";
 import { AdminSearchBox } from "@/components/admin-search-box";
 import { logoutAction } from "@/app/actions";
 import type { AppUser } from "@/lib/types";
@@ -61,6 +62,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
       {navigating ? (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-1 bg-[var(--olive)]" aria-hidden />
       ) : null}
+      <ViewportGate maxWidth={1023}>
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--paper)]/95 px-3 py-3 lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <LogoMark compact priority />
@@ -72,6 +74,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
             <AdminSearchBox compact />
           </div>
         </header>
+      </ViewportGate>
 
         <div className="lg:grid lg:min-h-screen lg:grid-cols-[280px_1fr]">
         {open ? <button type="button" className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setOpen(false)} aria-label="إغلاق" /> : null}
@@ -84,8 +87,9 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
           )}
         >
           <div className="mb-4 flex items-center justify-between lg:block">
-            <LogoMark compact className="lg:hidden" />
-            <LogoMark className="hidden lg:block" />
+            <ViewportGate minWidth={1024}>
+              <LogoMark />
+            </ViewportGate>
             <button type="button" className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--border)] lg:hidden" onClick={() => setOpen(false)} aria-label="إغلاق القائمة">
               <X size={16} />
             </button>
