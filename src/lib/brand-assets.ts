@@ -6,6 +6,7 @@ export type BrandAssetCategory = "hero" | "section" | "men" | "group" | "editori
 
 export type BrandAsset = {
   src: string;
+  webpSrc: string;
   alt: string;
   focalPoint: string;
   width: number;
@@ -26,6 +27,7 @@ function asset(
 ): BrandAsset {
   return {
     src: `${PACK}/${file}`,
+    webpSrc: `${PACK}/webp/${file.replace(/\.png$/i, ".webp")}`,
     alt,
     focalPoint,
     width,

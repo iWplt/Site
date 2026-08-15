@@ -36,8 +36,9 @@ export function BrandPhoto({
   fetchPriority?: "high" | "low" | "auto";
 }) {
   const highPriority = priority;
-  const renderQuality = quality ?? (highPriority ? 90 : 75);
+  const renderQuality = quality ?? (highPriority ? 82 : 75);
   const resolvedFetch = fetchPriority ?? (highPriority ? "high" : "auto");
+  const useStaticWebp = Boolean(asset.webpSrc);
 
   return (
     <div
@@ -49,16 +50,16 @@ export function BrandPhoto({
       )}
     >
       <Image
-        src={asset.src}
+        src={useStaticWebp ? asset.webpSrc : asset.src}
         alt={alt ?? asset.alt}
         fill
-        sizes={sizes}
+        sizes={useStaticWebp ? sizes : sizes}
         quality={renderQuality}
         priority={highPriority}
         fetchPriority={resolvedFetch}
         loading={highPriority || eager ? "eager" : "lazy"}
         placeholder="empty"
-        unoptimized={asset.src.startsWith("blob:") || asset.src.startsWith("data:")}
+        unoptimized={useStaticWebp || asset.src.startsWith("blob:") || asset.src.startsWith("data:")}
         className="object-cover object-center"
         style={{ objectPosition: asset.focalPoint }}
       />
@@ -90,7 +91,7 @@ export function BrandInspiration({
               asset={item.asset}
               alt={item.asset.alt}
               aspect={index === 2 ? "4/5" : "1/1"}
-              quality={86}
+              quality={75}
               sizes={
                 index === 2
                   ? "(max-width: 640px) 100vw, (max-width: 1024px) 34vw, 400px"

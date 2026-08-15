@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { BrandPhoto } from "@/components/brand-photo";
 import { BrandPhotoBackdrop } from "@/components/brand-photo-backdrop";
+import { DeferredOnView } from "@/components/deferred-on-view";
 import { cn } from "@/lib/utils";
 import { PUBLIC_VISUALS, type BrandAsset, type PublicVisualVariant } from "@/lib/brand-assets";
 
@@ -45,7 +46,8 @@ export function PhotoMosaic({
   const three = tiles.length === 3;
 
   return (
-    <section className={cn("grid gap-2 sm:gap-3", className)} aria-label="معرض صور التخرج">
+    <DeferredOnView className={className} minHeight="18rem">
+    <section className="grid gap-2 sm:gap-3" aria-label="معرض صور التخرج">
       <div
         className={cn(
           "grid gap-2 sm:gap-3",
@@ -71,6 +73,7 @@ export function PhotoMosaic({
         ))}
       </div>
     </section>
+    </DeferredOnView>
   );
 }
 
@@ -86,7 +89,8 @@ export function StudentGalleryStrip({
   if (!items.length) return null;
 
   return (
-    <section className={cn("grid gap-3", className)} aria-label={title}>
+    <DeferredOnView className={className} minHeight="16rem">
+    <section className="grid gap-3" aria-label={title}>
       <div className="flex items-end justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-[var(--gold)]">هوية التخرج</p>
@@ -108,6 +112,7 @@ export function StudentGalleryStrip({
         ))}
       </div>
     </section>
+    </DeferredOnView>
   );
 }
 
@@ -121,7 +126,8 @@ export function EditorialPhotoSection({
   if (!items.length) return null;
 
   return (
-    <section className={cn("grid gap-3", className)} aria-label="مجموعة التخرج">
+    <DeferredOnView className={className} minHeight="16rem">
+    <section className="grid gap-3" aria-label="مجموعة التخرج">
       <div>
         <p className="text-sm font-bold text-[var(--gold)]">مجموعة التخرج</p>
         <h2 className="mt-1 text-xl font-black text-[var(--olive-dark)] sm:text-2xl">إلهام من أزياء WARKA</h2>
@@ -145,6 +151,7 @@ export function EditorialPhotoSection({
         ))}
       </div>
     </section>
+    </DeferredOnView>
   );
 }
 

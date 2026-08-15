@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { useFormStatus } from "react-dom";
 import {
   ClipboardList,
   FileText,
@@ -50,9 +52,15 @@ const repNav = [
 export function AdminShell({ children, user }: { children: React.ReactNode; user: AppUser }) {
   const nav = user.role === "OWNER" ? ownerNav : repNav;
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const navigating = Boolean(pendingHref && pendingHref !== pathname);
 
   return (
     <main className="min-h-screen bg-[#f6efe1]">
+      {navigating ? (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-1 bg-[var(--olive)]" aria-hidden />
+      ) : null}
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--paper)]/95 px-3 py-3 lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <LogoMark compact priority />
@@ -93,7 +101,10 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
                 key={item.href}
                 href={item.href}
                 prefetch
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  if (item.href !== pathname) setPendingHref(item.href);
+                }}
                 className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[var(--olive)] hover:bg-[#3f472d0d]"
               >
                 <item.icon size={18} />
@@ -102,13 +113,23 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
             ))}
           </nav>
           <form action={logoutAction} className="mt-4">
-            <button className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[var(--danger)] hover:bg-[#9d2f2f12]">
-              <LogOut size={18} /> تسجيل الخروج
-            </button>
+            <LogoutButton />
           </form>
         </aside>
         <section className="min-w-0 px-3 pb-6 pt-3 sm:p-8">{children}</section>
         </div>
     </main>
+  );
+}
+
+function LogoutButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[var(--danger)] hover:bg-[#9d2f2f12] disabled:opacity-60"
+      disabled={pending}
+    >
+      <LogOut size={18} /> {pending ? "جاري الخروج..." : "تسجيل الخروج"}
+    </button>
   );
 }
