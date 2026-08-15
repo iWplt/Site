@@ -78,7 +78,7 @@ export async function getBatch(user: AppUser, batchId: string): Promise<BatchWit
 
 export async function listStudents(
   user: AppUser,
-  options?: { batchId?: string; search?: string }
+  options?: { batchId?: string; search?: string; unbatchedOnly?: boolean; limit?: number }
 ): Promise<StudentWithState[]> {
   if (assertPersistenceAllowed() === "supabase") return sbListStudents(user, options);
 

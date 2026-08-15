@@ -26,7 +26,7 @@ export function PublicVisualHero({
       asset={asset}
       aspect={aspect}
       priority={important}
-      quality={important ? 95 : 90}
+      quality={important ? 90 : 75}
       sizes={sizes}
       className={cn("w-full", "border border-[var(--border)] shadow-[var(--shadow)]", className)}
     />
@@ -57,7 +57,7 @@ export function PhotoMosaic({
             key={asset.src}
             asset={asset}
             aspect={three && index === 2 ? "4/5" : "1/1"}
-            quality={86}
+            quality={75}
             sizes={
               three && index === 2
                 ? "(max-width: 640px) 100vw, 420px"
@@ -99,7 +99,7 @@ export function StudentGalleryStrip({
             <BrandPhoto
               asset={item.asset}
               aspect="1/1"
-              quality={86}
+              quality={75}
               sizes="(max-width: 640px) 48vw, (max-width: 1024px) 22vw, 240px"
               className="warka-photo-tile"
             />
@@ -132,7 +132,7 @@ export function EditorialPhotoSection({
             <BrandPhoto
               asset={item.asset}
               aspect={index === 2 ? "4/5" : "1/1"}
-              quality={86}
+              quality={75}
               sizes={
                 index === 2
                   ? "(max-width: 640px) 100vw, (max-width: 1024px) 34vw, 400px"

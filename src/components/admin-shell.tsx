@@ -92,7 +92,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch={false}
+                prefetch
                 onClick={() => setOpen(false)}
                 className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[var(--olive)] hover:bg-[#3f472d0d]"
               >

@@ -555,12 +555,19 @@ export async function sbGetBatch(user: AppUser, batchId: string): Promise<BatchW
 
 export async function sbListStudents(
   user: AppUser,
-  options?: { batchId?: string; search?: string }
+  options?: { batchId?: string; search?: string; unbatchedOnly?: boolean; limit?: number }
 ): Promise<StudentWithState[]> {
   const admin = createAdminClient();
-  let query = admin.from("student_overview").select("*").order("created_at", { ascending: false }).limit(250);
+  let query = admin
+    .from("student_overview")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(options?.limit ?? 80);
 
-  if (options?.batchId) {
+  if (options?.unbatchedOnly) {
+    if (user.role !== "OWNER") return [];
+    query = query.is("batch_id", null);
+  } else if (options?.batchId) {
     if (!(await sbCanAccessBatchInternal(admin, user, options.batchId))) return [];
     query = query.eq("batch_id", options.batchId);
   } else if (user.role === "REPRESENTATIVE") {
@@ -600,10 +607,12 @@ export async function sbListForms(user: AppUser): Promise<BookingFormRecord[]> {
   const admin = createAdminClient();
 
   if (user.role === "OWNER") {
-    const { data, error } = await admin.from("booking_forms").select("*").order("created_at", { ascending: false });
+    const { data, error } = await admin
+      .from("booking_forms")
+      .select("id,name,slug,type,status,batch_id,internal_description,definition,opening_date,closing_date,created_at")
+      .order("created_at", { ascending: false });
     if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل النماذج."));
-    const forms = await Promise.all(((data ?? []) as BookingFormRow[]).map((row) => resolveFormRowImages(row)));
-    return forms;
+    return ((data ?? []) as BookingFormRow[]).map(mapFormRow);
   }
 
   const batchIds = await resolveRepresentativeBatchIds(admin, user);
@@ -614,7 +623,7 @@ export async function sbListForms(user: AppUser): Promise<BookingFormRecord[]> {
 
   const merged = ((batchFormsResult.data ?? []) as BookingFormRow[]).filter((row) => row.batch_id);
   merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return Promise.all(merged.map((row) => resolveFormRowImages(row)));
+  return merged.map(mapFormRow);
 }
 
 async function resolveFormRowImages(row: BookingFormRow): Promise<BookingFormRecord> {
@@ -677,7 +686,7 @@ export async function sbListSubmissions(
     )
     .eq("is_current", true)
     .order("submitted_at", { ascending: false })
-    .limit(options?.limit ?? 150);
+    .limit(options?.limit ?? 40);
 
   if (options?.individualOnly) {
     if (user.role !== "OWNER") return [];
@@ -843,52 +852,30 @@ export async function sbGetDashboardMetrics(user: AppUser) {
 
   let batchQuery = admin.from("batches").select("id", { count: "exact", head: true }).eq("status", "active");
   let studentQuery = admin.from("students").select("id", { count: "exact", head: true });
-  let submittedQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true);
-  let todayQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).gte("submitted_at", iraqStart);
-  let reviewedQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).eq("status", "REVIEWED");
-  let confirmedQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).eq("status", "CONFIRMED");
-  let productionQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).eq("status", "IN_PRODUCTION");
-  let readyQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).eq("status", "READY");
-  let deliveredQuery = admin.from("submissions").select("id", { count: "exact", head: true }).eq("is_current", true).eq("status", "DELIVERED");
+  let ordersQuery = admin.from("submissions").select("status,submitted_at").eq("is_current", true);
 
   if (batchFilter) {
     batchQuery = batchQuery.in("id", batchFilter);
     studentQuery = studentQuery.in("batch_id", batchFilter);
-    submittedQuery = submittedQuery.in("batch_id", batchFilter);
-    todayQuery = todayQuery.in("batch_id", batchFilter);
-    reviewedQuery = reviewedQuery.in("batch_id", batchFilter);
-    confirmedQuery = confirmedQuery.in("batch_id", batchFilter);
-    productionQuery = productionQuery.in("batch_id", batchFilter);
-    readyQuery = readyQuery.in("batch_id", batchFilter);
-    deliveredQuery = deliveredQuery.in("batch_id", batchFilter);
+    ordersQuery = ordersQuery.in("batch_id", batchFilter);
   }
 
-  const [activeBatches, totalStudents, submittedOrders, todayOrders, reviewed, confirmed, inProduction, ready, delivered] =
-    await Promise.all([
-      batchQuery,
-      studentQuery,
-      submittedQuery,
-      todayQuery,
-      reviewedQuery,
-      confirmedQuery,
-      productionQuery,
-      readyQuery,
-      deliveredQuery
-    ]);
+  const [activeBatches, totalStudents, orders] = await Promise.all([batchQuery, studentQuery, ordersQuery]);
+  const rows = (orders.data ?? []) as Array<{ status: string; submitted_at: string }>;
+  const submitted = rows.length;
+  const countStatus = (status: string) => rows.filter((row) => row.status === status).length;
 
-  const students = totalStudents.count ?? 0;
-  const submitted = submittedOrders.count ?? 0;
   return {
     activeBatches: activeBatches.count ?? 0,
-    totalStudents: students,
+    totalStudents: totalStudents.count ?? 0,
     submittedOrders: submitted,
-    pendingStudents: Math.max(0, students - submitted),
-    todayOrders: todayOrders.count ?? 0,
-    reviewed: reviewed.count ?? 0,
-    confirmed: confirmed.count ?? 0,
-    inProduction: inProduction.count ?? 0,
-    ready: ready.count ?? 0,
-    delivered: delivered.count ?? 0
+    pendingStudents: Math.max(0, (totalStudents.count ?? 0) - submitted),
+    todayOrders: rows.filter((row) => row.submitted_at >= iraqStart).length,
+    reviewed: countStatus("REVIEWED"),
+    confirmed: countStatus("CONFIRMED"),
+    inProduction: countStatus("IN_PRODUCTION"),
+    ready: countStatus("READY"),
+    delivered: countStatus("DELIVERED")
   };
 }
 
@@ -918,7 +905,11 @@ export async function sbLogin(email: string, password: string): Promise<{ error?
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: "بيانات الدخول غير صحيحة." };
   const { data: profile } = await supabase.from("profiles").select("disabled").eq("id", auth.user.id).maybeSingle();
-  if (!profile || profile.disabled) {
+  if (!profile) {
+    await supabase.auth.signOut();
+    return { error: "الحساب غير مكتمل. اطلب من المالك إنشاء الملف الشخصي أولاً." };
+  }
+  if (profile.disabled) {
     await supabase.auth.signOut();
     return { error: "بيانات الدخول غير صحيحة." };
   }
@@ -1477,6 +1468,38 @@ export async function sbCreateBatch(user: AppUser, input: CreateBatchInput): Pro
   return mapBatchRow(row);
 }
 
+async function createAuthUserWithProfile(
+  admin: SupabaseAdminClient,
+  input: { fullName: string; phone?: string; email: string; password: string; role: Role }
+) {
+  const { data: created, error } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { full_name: input.fullName, role: input.role }
+  });
+  if (error || !created?.user) {
+    const message = error?.message ?? "";
+    if (/already.*registered|duplicate/i.test(message)) throw new Error("البريد مستخدم مسبقاً.");
+    throw new Error(message || "تعذر إنشاء الحساب.");
+  }
+
+  const userId = created.user.id;
+  const { error: profileError } = await admin.from("profiles").insert({
+    id: userId,
+    full_name: input.fullName,
+    role: input.role,
+    disabled: false,
+    phone: input.phone ?? null,
+    email: input.email
+  });
+  if (profileError) {
+    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    throw new Error(pgErrorMessage(profileError, "تعذر إنشاء الملف الشخصي بعد إنشاء حساب الدخول."));
+  }
+  return userId;
+}
+
 export type CreateRepresentativeInput = {
   fullName: string;
   phone?: string;
@@ -1488,33 +1511,13 @@ export type CreateRepresentativeInput = {
 export async function sbCreateRepresentative(input: CreateRepresentativeInput) {
   requireSupabaseSecretsForWrites();
   const admin = createAdminClient();
-
-  const { data: created, error } = await admin.auth.admin.createUser({
+  const userId = await createAuthUserWithProfile(admin, {
+    fullName: input.fullName,
+    phone: input.phone,
     email: input.email,
     password: input.password,
-    email_confirm: true,
-    user_metadata: { full_name: input.fullName }
+    role: "REPRESENTATIVE"
   });
-  if (error || !created?.user) {
-    const message = error?.message ?? "";
-    if (/already.*registered|duplicate/i.test(message)) throw new Error("البريد مستخدم مسبقاً.");
-    throw new Error(message || "تعذر إنشاء الممثل.");
-  }
-
-  const userId = created.user.id;
-
-  const { error: profileError } = await admin.from("profiles").insert({
-    id: userId,
-    full_name: input.fullName,
-    role: "REPRESENTATIVE",
-    disabled: false,
-    phone: input.phone ?? null,
-    email: input.email
-  });
-  if (profileError) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
-    throw new Error(pgErrorMessage(profileError, "تعذر إنشاء الممثل."));
-  }
 
   if (input.batchIds.length) {
     const { error: linkError } = await admin
@@ -1541,6 +1544,38 @@ export async function sbCreateRepresentative(input: CreateRepresentativeInput) {
     phone: input.phone,
     batchIds: input.batchIds
   };
+}
+
+export type CreateOwnerInput = {
+  fullName: string;
+  phone?: string;
+  email: string;
+  password: string;
+};
+
+export async function sbCreateOwner(input: CreateOwnerInput) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const userId = await createAuthUserWithProfile(admin, {
+    fullName: input.fullName,
+    phone: input.phone,
+    email: input.email,
+    password: input.password,
+    role: "OWNER"
+  });
+  await sbAudit(admin, "OWNER_CREATED", "profile", userId, undefined, { email: input.email });
+  return { id: userId, fullName: input.fullName, email: input.email };
+}
+
+export async function sbListOwners() {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id,full_name,email,phone,disabled,created_at")
+    .eq("role", "OWNER")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل المالكين."));
+  return data ?? [];
 }
 
 export async function sbToggleRepresentative(id: string, disabled: boolean) {

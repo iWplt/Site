@@ -16,9 +16,14 @@ export default async function StudentsIndexPage({
   const { q } = await searchParams;
   const needle = q?.trim();
   const origin = configuredAppUrl() || (await requestOrigin()) || "";
+  const studentsPromise = needle
+    ? listStudents(user, { search: needle, limit: 80 })
+    : user.role === "OWNER"
+      ? listStudents(user, { unbatchedOnly: true, limit: 80 })
+      : Promise.resolve([]);
   const [batches, students, definition] = await Promise.all([
     listBatches(user),
-    listStudents(user, { search: needle }),
+    studentsPromise,
     user.role === "OWNER" ? getUniformTemplateDefinition() : Promise.resolve(null)
   ]);
 

@@ -36,7 +36,7 @@ export function BrandPhoto({
   fetchPriority?: "high" | "low" | "auto";
 }) {
   const highPriority = priority;
-  const renderQuality = quality ?? (highPriority ? 92 : 86);
+  const renderQuality = quality ?? (highPriority ? 90 : 75);
   const resolvedFetch = fetchPriority ?? (highPriority ? "high" : "auto");
 
   return (

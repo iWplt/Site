@@ -33,6 +33,7 @@ import {
   sbCreateBatch,
   sbCreateForm,
   sbCreateIndividualStudent,
+  sbCreateOwner,
   sbCreateRepresentative,
   sbDeleteStudents,
   sbDuplicateForm,
@@ -569,6 +570,29 @@ export async function createRepresentativeAction(_state: { error?: string } | un
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     return { error: error instanceof Error ? error.message : "تعذر إنشاء الممثل." };
+  }
+}
+
+export async function createOwnerAction(_state: { error?: string } | undefined, formData: FormData) {
+  await requireUser(["OWNER"]);
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "").trim();
+
+  if (!fullName || !email) return { error: "الاسم والبريد مطلوبان." };
+  if (password.length < 8) return { error: "كلمة المرور يجب أن تتكون من 8 أحرف على الأقل." };
+
+  try {
+    if (assertPersistenceAllowed() !== "supabase") {
+      return { error: "إنشاء مالك إضافي متاح في وضع Supabase فقط." };
+    }
+    await sbCreateOwner({ fullName, phone: phone || undefined, email, password });
+    revalidateAdmin();
+    redirect("/admin/settings");
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    return { error: error instanceof Error ? error.message : "تعذر إنشاء المالك." };
   }
 }
 

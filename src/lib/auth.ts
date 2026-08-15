@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { hasSupabaseConfig } from "@/lib/env";
@@ -25,7 +26,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
   }
 }
 
-export async function getCurrentUser(): Promise<AppUser | null> {
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<AppUser | null> {
   if (hasSupabaseConfig()) {
     const supabase = await createClient();
     if (!supabase) return null;
@@ -83,7 +84,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     fullName: profile.full_name,
     batchIds: profile.batch_ids
   };
-}
+});
 
 export async function requireUser(roles?: Role[]) {
   const user = await getCurrentUser();

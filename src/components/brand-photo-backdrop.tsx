@@ -69,7 +69,7 @@ export function BrandPhotoBackdrop({ assets }: { assets: BrandAsset[] }) {
             key={asset.src}
             asset={asset}
             aspect="3/4"
-            quality={86}
+            quality={75}
             sizes="176px"
             fetchPriority="low"
             className="warka-photo-tile"
@@ -82,7 +82,7 @@ export function BrandPhotoBackdrop({ assets }: { assets: BrandAsset[] }) {
             key={asset.src}
             asset={asset}
             aspect="3/4"
-            quality={86}
+            quality={75}
             sizes="176px"
             fetchPriority="low"
             className="warka-photo-tile"

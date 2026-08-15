@@ -1,11 +1,14 @@
 import { Card } from "@/components/ui";
+import { CreateOwnerForm } from "@/components/create-owner-form";
 import { requireUser } from "@/lib/auth";
 import { getActivePersistenceMode } from "@/lib/data";
 import { persistenceLabel } from "@/lib/persistence";
+import { sbListOwners } from "@/lib/store/supabase-db";
 
 export default async function SettingsPage() {
   await requireUser(["OWNER"]);
   const mode = getActivePersistenceMode();
+  const owners = mode === "supabase" ? await sbListOwners() : [];
 
   return (
     <div className="grid gap-4 sm:gap-6">
@@ -20,6 +23,23 @@ export default async function SettingsPage() {
           `WARKA_ALLOW_LOCAL_DEMO=true`.
         </p>
       </Card>
+      {mode === "supabase" ? (
+        <>
+          <Card>
+            <h2 className="text-2xl font-black text-[var(--olive-dark)]">المالكون</h2>
+            <div className="mt-4 grid gap-3">
+              {owners.map((owner) => (
+                <p key={owner.id} className="rounded-2xl bg-white/60 p-3 font-bold text-[var(--olive)]">
+                  {owner.full_name}
+                  {owner.email ? ` · ${owner.email}` : ""}
+                  {owner.disabled ? " · معطّل" : ""}
+                </p>
+              ))}
+            </div>
+          </Card>
+          <CreateOwnerForm />
+        </>
+      ) : null}
       <Card>
         <h2 className="text-2xl font-black text-[var(--olive-dark)]">جاهزية الإنتاج</h2>
         <div className="mt-5 grid gap-3">
