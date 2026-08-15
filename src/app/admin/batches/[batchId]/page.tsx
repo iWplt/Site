@@ -60,7 +60,9 @@ export default async function BatchDetailPage({
         <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary">نظرة عامة</LinkButton>
         <LinkButton href={`/admin/batches/${batch.id}/students`} variant="secondary">الطلاب</LinkButton>
         <LinkButton href={`/admin/batches/${batch.id}/orders`} variant="secondary">الحجوزات</LinkButton>
-        <LinkButton href="/admin/forms" variant="secondary">النموذج</LinkButton>
+        <LinkButton href={batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms"} variant="secondary">
+          النموذج
+        </LinkButton>
         <LinkButton href="/admin/representatives" variant="secondary">الممثلون</LinkButton>
       </div>
 
@@ -78,9 +80,14 @@ export default async function BatchDetailPage({
           <h3 className="mt-6 font-black text-[var(--olive)]">النموذج</h3>
           <p className="mt-2">{batch.form?.name ?? "لا يوجد نموذج مرتبط"}</p>
           {batch.form ? (
-            <LinkButton href={`/f/${batch.form.slug}`} className="mt-4" variant="secondary">
-              فتح الرابط العام
-            </LinkButton>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <LinkButton href={`/f/${batch.form.slug}`} variant="secondary">
+                فتح الرابط العام
+              </LinkButton>
+              <LinkButton href={`/admin/forms/${batch.form.id}`} variant="secondary">
+                إدارة النموذج
+              </LinkButton>
+            </div>
           ) : null}
         </Card>
         <Card>

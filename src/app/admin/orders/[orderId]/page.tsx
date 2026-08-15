@@ -8,6 +8,7 @@ import { getSubmissionDetail } from "@/lib/data";
 import { statusLabels } from "@/lib/labels";
 import { snapshotOrFallback } from "@/lib/order-snapshot";
 import { buildOrderSectionsFromSnapshot } from "@/lib/order-view";
+import { formatProductPrice } from "@/lib/product-catalog";
 import { formatArabicDate } from "@/lib/utils";
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -109,6 +110,26 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ or
               .filter((field) => field.fixed)
               .map((field) => (
                 <Row key={field.key} label={field.label} value={`${field.optionLabel || field.displayValue} · اختيار موحد للدفعة`} />
+              ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {snapshot.fields.some((field) => field.productId) ? (
+        <Card>
+          <h2 className="text-2xl font-black text-[var(--olive-dark)]">المنتجات المختارة</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">لقطة وقت الإرسال. إعادة تسمية المنتج لاحقاً لا تغيّر هذا الطلب. صورة المنتج مرجع من المالك وليست مرفقاً من الطالب.</p>
+          <div className="mt-4 grid gap-3">
+            {snapshot.fields
+              .filter((field) => field.productId)
+              .map((field) => (
+                <div key={`${field.key}-${field.productId}`} className="rounded-2xl border border-[var(--border)] bg-white/50 p-3">
+                  <p className="text-sm font-bold text-[var(--muted)]">{field.categoryName || field.sectionTitle}</p>
+                  <p className="mt-1 break-words font-black text-[var(--olive-dark)]">{field.productName || field.optionLabel || field.displayValue}</p>
+                  {formatProductPrice(field.priceIqd) ? (
+                    <p className="mt-1 text-sm font-bold text-[var(--olive)]">{formatProductPrice(field.priceIqd)}</p>
+                  ) : null}
+                </div>
               ))}
           </div>
         </Card>

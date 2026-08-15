@@ -12,4 +12,6 @@ supabase/.branches
 supabase/.temp
 .netlify
 tmp-*.json
+.tmp-screenshots
+.tmp-playwright
 public/warka-brand/WARKA_mobile_visual_assets

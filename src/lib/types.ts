@@ -54,6 +54,49 @@ export type FormOption = {
   imageAlt?: string;
   enabled?: boolean;
   children?: FormOption[];
+  catalogProductId?: string;
+  priceIqd?: number | null;
+  categorySlug?: string;
+  categoryName?: string;
+};
+
+export type ProductAvailabilityScope = "all" | "individual" | "batches" | "forms";
+
+export type ProductAvailability = {
+  id: string;
+  product_id: string;
+  scope: ProductAvailabilityScope;
+  batch_id?: string | null;
+  form_id?: string | null;
+};
+
+export type ProductCategory = {
+  id: string;
+  slug: string;
+  name_ar: string;
+  name_en?: string | null;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CatalogProduct = {
+  id: string;
+  category_id: string;
+  category?: ProductCategory;
+  name_ar: string;
+  name_en?: string | null;
+  description?: string | null;
+  price_iqd?: number | null;
+  image_path?: string | null;
+  image_url?: string | null;
+  active: boolean;
+  archived: boolean;
+  sort_order: number;
+  created_at: string;
+  created_by?: string | null;
+  updated_at: string;
+  availability: ProductAvailability[];
 };
 
 export type FormField = {
@@ -145,6 +188,27 @@ export type BookingFormRecord = {
   opening_date?: string;
   closing_date?: string;
   definition: FormDefinition;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type FormSummary = {
+  id: string;
+  name: string;
+  internal_description?: string;
+  slug: string;
+  type: FormType;
+  status: FormStatus;
+  batch_id?: string;
+  batch_name?: string;
+  opening_date?: string;
+  closing_date?: string;
+  created_at?: string;
+  updated_at?: string;
+  sectionCount: number;
+  fieldCount: number;
+  uploadCount: number;
+  productOptionCount: number;
 };
 
 export type VerifiedBookingSession = {

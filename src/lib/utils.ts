@@ -23,6 +23,25 @@ export function formatArabicDate(value: string | Date) {
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 
+export function formatBookingCardDate(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const day = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    numberingSystem: "latn"
+  })
+    .format(date)
+    .replace(/\s?am$/i, " ص")
+    .replace(/\s?pm$/i, " م");
+  return `${day} - ${time}`;
+}
+
 export function toArabicDigits(value: string | number) {
   return String(value).replace(/\d/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
 }

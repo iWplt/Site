@@ -13,6 +13,7 @@ import {
   type SubmissionRecord
 } from "@/lib/store/local-db";
 import {
+  sbGetAdminForm,
   sbGetBatch,
   sbGetDashboardMetrics,
   sbGetEffectivePublicForm,
@@ -25,13 +26,16 @@ import {
   sbGetUniformTemplateDefinition,
   sbListAuditLogs,
   sbListBatches,
+  sbListFormSummaries,
   sbListForms,
   sbListRepresentatives,
   sbListStudents,
   sbListSubmissions,
   type SubmissionDetail
 } from "@/lib/store/supabase-db";
-import type { Batch, BatchStats, BookingFormRecord, StudentWithState, SubmissionSummary } from "@/lib/types";
+import { withCatalogDefinition } from "@/lib/store/catalog-store";
+import type { Batch, BatchStats, BookingFormRecord, FormSummary, StudentWithState, SubmissionSummary } from "@/lib/types";
+import { toFormSummary } from "@/lib/form-summary";
 
 export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormRecord | null };
 
@@ -107,6 +111,38 @@ export async function listStudents(
   );
 }
 
+export async function listFormSummaries(user: AppUser): Promise<FormSummary[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListFormSummaries(user);
+
+  const db = ensureLocal();
+  return db.forms
+    .filter((form) => {
+      if (user.role === "OWNER") return true;
+      if (!form.batch_id) return false;
+      return db.profiles.find((profile) => profile.id === user.id)?.batch_ids.includes(form.batch_id);
+    })
+    .map((form) =>
+      toFormSummary(form, form.batch_id ? db.batches.find((batch) => batch.id === form.batch_id)?.name : undefined)
+    );
+}
+
+export async function getAdminForm(
+  user: AppUser,
+  formId: string,
+  options?: { resolveImages?: boolean }
+): Promise<BookingFormRecord | null> {
+  if (assertPersistenceAllowed() === "supabase") return sbGetAdminForm(user, formId, options);
+
+  const db = ensureLocal();
+  const form = db.forms.find((entry) => entry.id === formId);
+  if (!form) return null;
+  if (user.role !== "OWNER") {
+    if (!form.batch_id) return null;
+    if (!(await canAccessBatch(user, form.batch_id))) return null;
+  }
+  return { ...form, definition: form.definition ?? defaultWarkaFormDefinition };
+}
+
 export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
   if (assertPersistenceAllowed() === "supabase") return sbListForms(user);
 
@@ -134,7 +170,9 @@ export async function getPublicForm(slug: string, options?: { resolveImages?: bo
 
 export async function getEffectivePublicForm(slug: string, studentId?: string | null): Promise<BookingFormRecord | null> {
   if (assertPersistenceAllowed() === "supabase") return sbGetEffectivePublicForm(slug, studentId);
-  return getPublicForm(slug);
+  const form = await getPublicForm(slug);
+  if (!form) return null;
+  return withCatalogDefinition(form);
 }
 
 export async function getUniformTemplateDefinition() {

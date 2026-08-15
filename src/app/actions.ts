@@ -25,6 +25,7 @@ import { signBookingReceipt } from "@/lib/booking-receipt";
 import { answersWithSnapshot, buildOrderSnapshot } from "@/lib/order-snapshot";
 import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/lib/validation";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
+import { mergeCatalogIntoDefinition, filterAvailableProducts } from "@/lib/product-catalog";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
 import { deleteOptionImage, storeOptionImage } from "@/lib/storage/uploads";
 import {
@@ -51,6 +52,7 @@ import {
   sbSubmitBooking,
   sbToggleRepresentative,
   sbUpdateFormFieldMeta,
+  sbUpdateFormGeneral,
   sbUpdateFormOption,
   sbUpdateFormUploadSettings,
   sbUpdateOrderStatus,
@@ -80,6 +82,8 @@ function revalidateAdmin(batchId?: string) {
   revalidatePath("/admin/representatives");
   revalidatePath("/admin/import");
   revalidatePath("/admin/forms");
+  revalidatePath("/admin/forms", "layout");
+  revalidatePath("/admin/products");
   revalidatePath("/admin/audit");
   if (batchId) {
     revalidatePath(`/admin/batches/${batchId}`);
@@ -327,7 +331,16 @@ export async function submitBookingAction(input: unknown) {
       if (existing) throw new Error("تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح.");
 
       const answers = { ...parsed.data.answers, student_name: student.full_name };
-      const validation = validateDynamicAnswers(form.definition ?? defaultWarkaFormDefinition, answers);
+      const definition = mergeCatalogIntoDefinition(
+        form.definition ?? defaultWarkaFormDefinition,
+        filterAvailableProducts(db.products ?? [], {
+          formId: form.id,
+          formType: form.type,
+          batchId: form.batch_id ?? session.batchId ?? null
+        }),
+        db.product_categories ?? []
+      );
+      const validation = validateDynamicAnswers(definition, answers);
       if (!validation.valid) {
         throw new Error("يرجى مراجعة الحقول المطلوبة.");
       }
@@ -335,7 +348,7 @@ export async function submitBookingAction(input: unknown) {
       const snapshot = buildOrderSnapshot({
         formId: form.id,
         formName: form.name,
-        definition: form.definition ?? defaultWarkaFormDefinition,
+        definition,
         answers
       });
       const persistedAnswers = answersWithSnapshot(answers, snapshot);
@@ -900,12 +913,16 @@ export async function createFormAction(_state: { error?: string } | undefined, f
 
   try {
     if (assertPersistenceAllowed() === "supabase") {
-      await sbCreateForm(user, { name, slug, type, batchId, internalDescription: description || undefined });
+      const created = await sbCreateForm(user, { name, slug, type, batchId, internalDescription: description || undefined });
+      revalidateAdmin(batchId);
+      redirect(`/admin/forms/${created.id}`);
     } else {
+      let createdId = "";
       mutateDb((db) => {
         if (db.forms.some((form) => form.slug === slug)) throw new Error("الرابط مستخدم مسبقاً.");
+        createdId = randomUUID();
         db.forms.unshift({
-          id: randomUUID(),
+          id: createdId,
           name,
           slug,
           type,
@@ -914,11 +931,11 @@ export async function createFormAction(_state: { error?: string } | undefined, f
           status: "draft",
           definition: defaultWarkaFormDefinition
         });
-        audit(db, "FORM_CREATED", "booking_form", undefined, { id: user.id, label: user.fullName }, { slug });
+        audit(db, "FORM_CREATED", "booking_form", createdId, { id: user.id, label: user.fullName }, { slug });
       });
+      revalidateAdmin(batchId);
+      redirect(`/admin/forms/${createdId}`);
     }
-    revalidateAdmin(batchId);
-    redirect("/admin/forms");
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     return { error: error instanceof Error ? error.message : "تعذر إنشاء النموذج." };
@@ -1097,17 +1114,52 @@ export async function deleteFormOptionImageAction(formId: string, fieldKey: stri
   revalidateAdmin();
 }
 
+export async function updateFormGeneralAction(_state: { error?: string; success?: string } | undefined, formData: FormData) {
+  await requireUser(["OWNER"]);
+  const formId = String(formData.get("form_id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("internal_description") ?? "").trim();
+  const opening = String(formData.get("opening_date") ?? "").trim();
+  const closing = String(formData.get("closing_date") ?? "").trim();
+  if (!formId || !name) return { error: "اسم النموذج مطلوب." };
+
+  try {
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbUpdateFormGeneral(formId, {
+        name,
+        internalDescription: description || undefined,
+        openingDate: opening ? new Date(opening).toISOString() : null,
+        closingDate: closing ? new Date(closing).toISOString() : null
+      });
+    } else {
+      mutateDb((db) => {
+        const form = db.forms.find((entry) => entry.id === formId);
+        if (!form) throw new Error("النموذج غير موجود.");
+        form.name = name;
+        form.internal_description = description;
+      });
+    }
+    revalidateAdmin();
+    return { success: "تم حفظ الإعدادات العامة." };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر الحفظ." };
+  }
+}
+
 export async function duplicateFormAction(formId: string) {
   await requireUser(["OWNER"]);
+  let createdId = formId;
   if (assertPersistenceAllowed() === "supabase") {
-    await sbDuplicateForm(formId);
+    const created = await sbDuplicateForm(formId);
+    createdId = created.id;
   } else {
     mutateDb((db) => {
       const form = db.forms.find((entry) => entry.id === formId);
       if (!form) throw new Error("النموذج غير موجود.");
+      createdId = randomUUID();
       db.forms.unshift({
         ...form,
-        id: randomUUID(),
+        id: createdId,
         name: `${form.name} (نسخة)`,
         slug: `${form.slug}-copy-${Date.now().toString().slice(-4)}`,
         status: "draft"
@@ -1115,6 +1167,7 @@ export async function duplicateFormAction(formId: string) {
     });
   }
   revalidateAdmin();
+  redirect(`/admin/forms/${createdId}`);
 }
 
 export async function getStudentCardAction(studentId: string) {
@@ -1166,6 +1219,113 @@ export async function confirmPickupDeliveryAction(token: string) {
   revalidatePath("/admin/orders");
   revalidatePath("/admin");
   return result;
+}
+
+function parseProductFormData(formData: FormData) {
+  const category_id = String(formData.get("category_id") ?? "").trim();
+  const name_ar = String(formData.get("name_ar") ?? "").trim();
+  const name_en = String(formData.get("name_en") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const priceRaw = String(formData.get("price_iqd") ?? "").trim();
+  const active = String(formData.get("active") ?? "true") !== "false";
+  const sort_order = Number(String(formData.get("sort_order") ?? "0"));
+  const scope = String(formData.get("availability_scope") ?? "all") as "all" | "individual" | "selected";
+  const batchIds = formData.getAll("batch_ids").map(String).filter(Boolean);
+  const formIds = formData.getAll("form_ids").map(String).filter(Boolean);
+  const availability =
+    scope === "all"
+      ? [{ scope: "all" as const }]
+      : scope === "individual"
+        ? [{ scope: "individual" as const }]
+        : [
+            ...batchIds.map((batch_id) => ({ scope: "batches" as const, batch_id })),
+            ...formIds.map((form_id) => ({ scope: "forms" as const, form_id }))
+          ];
+  const price_iqd = priceRaw ? Number(priceRaw) : null;
+  return { category_id, name_ar, name_en, description, price_iqd, active, sort_order, availability };
+}
+
+export async function createProductAction(_state: { error?: string } | undefined, formData: FormData) {
+  const user = await requireUser(["OWNER"]);
+  const input = parseProductFormData(formData);
+  try {
+    const {
+      createCatalogProduct
+    } = await import("@/lib/store/catalog-store");
+    await createCatalogProduct(user, input);
+    revalidateAdmin();
+    redirect("/admin/products");
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    return { error: error instanceof Error ? error.message : "تعذر حفظ المنتج." };
+  }
+}
+
+export async function updateProductAction(_state: { error?: string } | undefined, formData: FormData) {
+  const user = await requireUser(["OWNER"]);
+  const productId = String(formData.get("product_id") ?? "").trim();
+  if (!productId) return { error: "المنتج غير موجود." };
+  const input = parseProductFormData(formData);
+  try {
+    const { updateCatalogProduct } = await import("@/lib/store/catalog-store");
+    await updateCatalogProduct(user, productId, input);
+    revalidateAdmin();
+    redirect("/admin/products");
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    return { error: error instanceof Error ? error.message : "تعذر تعديل المنتج." };
+  }
+}
+
+export async function toggleProductActiveAction(productId: string, active: boolean) {
+  await requireUser(["OWNER"]);
+  const { setCatalogProductActive } = await import("@/lib/store/catalog-store");
+  await setCatalogProductActive(productId, active);
+  revalidateAdmin();
+}
+
+export async function archiveProductAction(productId: string) {
+  await requireUser(["OWNER"]);
+  const { archiveCatalogProduct } = await import("@/lib/store/catalog-store");
+  await archiveCatalogProduct(productId);
+  revalidateAdmin();
+}
+
+export async function reorderProductAction(formData: FormData) {
+  await requireUser(["OWNER"]);
+  const productId = String(formData.get("product_id") ?? "").trim();
+  const sort_order = Number(String(formData.get("sort_order") ?? "0"));
+  const { reorderCatalogProduct } = await import("@/lib/store/catalog-store");
+  await reorderCatalogProduct(productId, sort_order);
+  revalidateAdmin();
+}
+
+export async function createProductCategoryAction(formData: FormData) {
+  await requireUser(["OWNER"]);
+  const name_ar = String(formData.get("name_ar") ?? "").trim();
+  const name_en = String(formData.get("name_en") ?? "").trim();
+  const { createProductCategory } = await import("@/lib/store/catalog-store");
+  await createProductCategory(name_ar, name_en || undefined);
+  revalidateAdmin();
+}
+
+export async function uploadProductImageAction(formData: FormData) {
+  await requireUser(["OWNER"]);
+  const productId = String(formData.get("product_id") ?? "").trim();
+  const file = formData.get("file");
+  if (!productId || !(file instanceof File)) return { error: "بيانات الصورة غير مكتملة." };
+  if (file.size > MAX_OPTION_IMAGE_BYTES) return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
+    if (!mimeType) return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+    const { saveCatalogProductImage } = await import("@/lib/store/catalog-store");
+    await saveCatalogProductImage(productId, { buffer, mimeType, originalName: file.name });
+    revalidateAdmin();
+    return { success: true as const };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر رفع الصورة." };
+  }
 }
 
 export type { AppUser };

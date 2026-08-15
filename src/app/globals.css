@@ -113,10 +113,125 @@ h1, h2 {
   overflow-wrap: anywhere;
 }
 
+.warka-login {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warka-login p,
+.warka-login label {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.warka-login input,
+.warka-login button {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.print-page {
+  background-color: #f4f2ee;
+  background-image:
+    linear-gradient(rgba(63, 71, 45, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(63, 71, 45, 0.035) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.booking-sheet-accent {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--olive-dark);
+}
+
+.booking-sheet-accent::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--gold);
+}
+
+.booking-ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.booking-ornament span {
+  height: 1px;
+  width: min(38%, 9.5rem);
+  background: rgba(63, 71, 45, 0.16);
+}
+
+.booking-ornament i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  transform: rotate(45deg);
+  background: var(--gold);
+}
+
+.booking-number {
+  font-family: var(--font-booking-number), "Palatino Linotype", Palatino, Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+.booking-sheet img.booking-logo {
+  width: auto;
+  height: 5.35rem;
+  max-width: 5.6rem;
+  max-height: 5.35rem;
+  object-fit: contain;
+}
+
+.booking-sheet img.booking-qr {
+  width: 6.35rem;
+  height: 6.35rem;
+  max-width: 6.35rem;
+  max-height: 6.35rem;
+}
+
+.booking-sheet img.booking-thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  max-width: 2.75rem;
+  max-height: 2.75rem;
+}
+
+@media (max-width: 640px) {
+  .booking-sheet img.booking-logo {
+    height: 4.35rem;
+    max-width: 4.75rem;
+    max-height: 4.35rem;
+  }
+
+  .booking-sheet img.booking-qr {
+    width: 5.5rem;
+    height: 5.5rem;
+    max-width: 5.5rem;
+    max-height: 5.5rem;
+  }
+}
+
 @media print {
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 10mm;
   }
 
   html, body {
@@ -124,22 +239,38 @@ h1, h2 {
     color: #252b1c !important;
   }
 
-  body {
+  body,
+  .print-page {
     background-image: none !important;
+    background-color: #fffaf0 !important;
   }
 
   .print-page {
     padding: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .booking-print-root,
+  .booking-sheet {
+    max-width: none !important;
   }
 
   .booking-sheet {
     box-shadow: none !important;
-    max-width: none !important;
+    border-color: rgba(63, 71, 45, 0.22) !important;
   }
 
-  .booking-sheet .warka-brand-lockup img {
-    background: transparent !important;
-    max-height: 5rem;
+  .booking-sheet header,
+  .booking-sheet section,
+  .booking-sheet .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .booking-sheet img.booking-logo,
+  .booking-sheet img.booking-qr {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   a[href]::after {

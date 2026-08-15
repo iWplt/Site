@@ -14,9 +14,12 @@ import type {
   BookingFormRecord,
   FormStatus,
   OrderStatus,
+  ProductCategory,
+  CatalogProduct,
   Role,
   StudentWithState
 } from "@/lib/types";
+import { DEFAULT_PRODUCT_CATEGORIES } from "@/lib/product-catalog";
 
 export type Representative = {
   id: string;
@@ -112,6 +115,8 @@ export type LocalDatabase = {
   status_history: StatusHistory[];
   audit_logs: AuditLog[];
   sessions: Array<{ token: string; user_id: string; expires_at: number }>;
+  product_categories: ProductCategory[];
+  products: CatalogProduct[];
 };
 
 const DATA_DIR = join(process.cwd(), ".data");
@@ -294,7 +299,17 @@ function seed(): LocalDatabase {
     submission_files: [],
     status_history: [],
     audit_logs: [],
-    sessions: []
+    sessions: [],
+    product_categories: DEFAULT_PRODUCT_CATEGORIES.map((category) => ({
+      id: `cat-${category.slug}`,
+      slug: category.slug,
+      name_ar: category.name_ar,
+      name_en: category.name_en,
+      sort_order: category.sort_order,
+      created_at: created,
+      updated_at: created
+    })),
+    products: []
   };
 
   for (const entry of studentsA) {
@@ -363,6 +378,18 @@ export function readDb(): LocalDatabase {
     writeDb(seeded);
     return seeded;
   }
+  if (!parsed.product_categories?.length) {
+    parsed.product_categories = DEFAULT_PRODUCT_CATEGORIES.map((category) => ({
+      id: `cat-${category.slug}`,
+      slug: category.slug,
+      name_ar: category.name_ar,
+      name_en: category.name_en,
+      sort_order: category.sort_order,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
+  }
+  if (!parsed.products) parsed.products = [];
   return parsed;
 }
 

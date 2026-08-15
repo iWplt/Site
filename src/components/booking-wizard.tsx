@@ -10,6 +10,7 @@ import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
+import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import type { BookingFormRecord, FormField } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,10 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState<SuccessState | null>(null);
   const [isPending, startTransition] = useTransition();
-  const sections = form.definition.sections;
+  const sections = useMemo(
+    () => form.definition.sections.filter((section) => section.fields.length > 0),
+    [form.definition.sections]
+  );
   const isReview = step >= sections.length;
   const stepLabels = [...sections.map((section) => section.title), "مراجعة الطلب"];
 
@@ -320,6 +324,9 @@ function FieldRenderer({
             {lockedOption?.description ? (
               <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{lockedOption.description}</p>
             ) : null}
+            {formatProductPrice(lockedOption?.priceIqd) ? (
+              <p className="mt-2 text-sm font-bold text-[var(--olive)]">{formatProductPrice(lockedOption?.priceIqd)}</p>
+            ) : null}
             <p className="mt-3 inline-flex rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
               اختيار موحد للدفعة
             </p>
@@ -385,6 +392,11 @@ function FieldRenderer({
                         <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description || option.description}</span>
                       ) : child.description ? (
                         <span className="mt-2 block text-sm leading-6 text-[var(--muted)]">{child.description}</span>
+                      ) : null}
+                      {formatProductPrice(child.priceIqd ?? option.priceIqd) ? (
+                        <span className="mt-2 block text-sm font-bold text-[var(--olive)]">
+                          {formatProductPrice(child.priceIqd ?? option.priceIqd)}
+                        </span>
                       ) : null}
                     </div>
                   </button>

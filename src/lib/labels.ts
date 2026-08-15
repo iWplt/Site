@@ -1,3 +1,9 @@
+export const formStatusLabels: Record<string, string> = {
+  draft: "مسودة",
+  published: "منشور",
+  closed: "مغلق"
+};
+
 export const statusLabels: Record<string, string> = {
   draft: "مسودة",
   active: "نشطة",

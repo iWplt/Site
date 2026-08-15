@@ -23,6 +23,11 @@ export type SnapshotField = {
   referenceImage?: SnapshotImageRef;
   childImages?: SnapshotImageRef[];
   fixed?: boolean;
+  productId?: string;
+  productName?: string;
+  categorySlug?: string;
+  categoryName?: string;
+  priceIqd?: number | null;
 };
 
 export type OrderSnapshot = {
@@ -73,7 +78,12 @@ export function buildOrderSnapshot(input: {
         optionLabel: selected?.label,
         optionDescription: selected?.description,
         referenceImage: referenceFromOption(selected),
-        fixed: Boolean(field.locked)
+        fixed: Boolean(field.locked),
+        productId: selected?.catalogProductId,
+        productName: selected?.catalogProductId ? selected.label : undefined,
+        categorySlug: selected?.categorySlug,
+        categoryName: selected?.categoryName,
+        priceIqd: selected?.priceIqd ?? null
       });
     }
   }

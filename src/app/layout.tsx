@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Kufi_Arabic } from "next/font/google";
+import { Noto_Kufi_Arabic, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
 const warkaFont = Noto_Kufi_Arabic({
@@ -10,6 +10,13 @@ const warkaFont = Noto_Kufi_Arabic({
   preload: true,
   fallback: ["Tahoma", "Arial", "sans-serif"],
   adjustFontFallback: true
+});
+
+const bookingSerif = Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-booking-number",
+  display: "swap"
 });
 
 export const metadata: Metadata = {
@@ -37,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={`${warkaFont.variable} ${warkaFont.className}`}>
+    <html lang="ar" dir="rtl" className={`${warkaFont.variable} ${bookingSerif.variable} ${warkaFont.className}`}>
       <body>{children}</body>
     </html>
   );

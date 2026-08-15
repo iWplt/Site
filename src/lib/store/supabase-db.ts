@@ -29,6 +29,8 @@ import {
   enforceUniformAnswers,
   type UniformSelectionMap
 } from "@/lib/form-uniform";
+import { withCatalogDefinition } from "@/lib/store/catalog-store";
+import { toFormSummary } from "@/lib/form-summary";
 import type {
   AccessCodeStatus,
   Batch,
@@ -287,6 +289,8 @@ function mapFormRow(row: BookingFormRow): BookingFormRecord {
     batch_id: row.batch_id ?? undefined,
     opening_date: row.opening_date ?? undefined,
     closing_date: row.closing_date ?? undefined,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
     definition: (row.definition as FormDefinition | null) ?? defaultWarkaFormDefinition
   };
 }
@@ -601,6 +605,76 @@ export async function sbGetStudentCard(user: AppUser, studentId: string): Promis
   await sbAssertBatchAccess(user, row.batch_id);
   const [student] = await attachStudentFormSlugs(admin, [mapStudentOverviewRow(row)]);
   return student;
+}
+
+const FORM_SUMMARY_COLUMNS =
+  "id,name,slug,type,status,batch_id,internal_description,opening_date,closing_date,created_at,updated_at";
+
+function canAccessFormRow(user: AppUser, row: Pick<BookingFormRow, "batch_id">, batchIds: string[]) {
+  if (user.role === "OWNER") return true;
+  if (!row.batch_id) return false;
+  return batchIds.includes(row.batch_id);
+}
+
+export async function sbListFormSummaries(user: AppUser): Promise<import("@/lib/types").FormSummary[]> {
+  const admin = createAdminClient();
+
+  if (user.role === "OWNER") {
+    const { data, error } = await admin
+      .from("booking_forms")
+      .select(`${FORM_SUMMARY_COLUMNS},definition`)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل النماذج."));
+    return ((data ?? []) as BookingFormRow[]).map((row) => toFormSummary(mapFormRow(row)));
+  }
+
+  const batchIds = await resolveRepresentativeBatchIds(admin, user);
+  const batchFormsResult = batchIds.length
+    ? await admin.from("booking_forms").select(`${FORM_SUMMARY_COLUMNS},definition`).in("batch_id", batchIds)
+    : { data: [] as BookingFormRow[], error: null };
+  if (batchFormsResult.error) throw new Error(pgErrorMessage(batchFormsResult.error, "تعذر تحميل النماذج."));
+
+  const merged = ((batchFormsResult.data ?? []) as BookingFormRow[]).filter((row) => row.batch_id);
+  merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return merged.map((row) => toFormSummary(mapFormRow(row)));
+}
+
+export async function sbGetAdminForm(
+  user: AppUser,
+  formId: string,
+  options?: { resolveImages?: boolean }
+): Promise<BookingFormRecord | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("booking_forms").select("*").eq("id", formId).maybeSingle();
+  if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل النموذج."));
+  if (!data) return null;
+  const row = data as BookingFormRow;
+  const batchIds = user.role === "REPRESENTATIVE" ? await resolveRepresentativeBatchIds(admin, user) : [];
+  if (!canAccessFormRow(user, row, batchIds)) return null;
+  if (options?.resolveImages) return resolveFormRowImages(row);
+  return mapFormRow(row);
+}
+
+export async function sbUpdateFormGeneral(
+  formId: string,
+  patch: { name: string; internalDescription?: string; openingDate?: string | null; closingDate?: string | null }
+) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("booking_forms")
+    .update({
+      name: patch.name,
+      internal_description: patch.internalDescription ?? null,
+      opening_date: patch.openingDate,
+      closing_date: patch.closingDate
+    })
+    .eq("id", formId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ إعدادات النموذج."));
+  if (!data) throw new Error("النموذج غير موجود.");
+  await sbAudit(admin, "FORM_GENERAL_UPDATED", "booking_form", formId, undefined, { name: patch.name });
 }
 
 export async function sbListForms(user: AppUser): Promise<BookingFormRecord[]> {
@@ -1029,10 +1103,9 @@ export async function sbSubmitBooking(
       return { ok: false, error: "الخيار المحدد غير متاح." };
     }
   }
-  const definition = applyUniformToDefinition(
-    (formRow.definition as FormDefinition | null) ?? defaultWarkaFormDefinition,
-    fixed
-  );
+  const formRecord = await resolveFormRowImages(formRow as BookingFormRow);
+  const cataloged = await withCatalogDefinition(formRecord);
+  const definition = applyUniformToDefinition(cataloged.definition, fixed);
   const finalAnswers = enforceUniformAnswers({ ...answers, student_name: session.studentName }, fixed);
   const validation = validateDynamicAnswers(definition, finalAnswers);
   if (!validation.valid) return { ok: false, error: "يرجى مراجعة الحقول المطلوبة." };
@@ -2407,8 +2480,9 @@ export async function sbGetEffectivePublicForm(slug: string, studentId?: string 
   if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل النموذج."));
   if (!data) return null;
   const form = await resolveFormRowImages(data as BookingFormRow);
+  const cataloged = await withCatalogDefinition(form);
   const fixed = await sbLoadFixedOptions(admin, form.id, studentId);
-  return { ...form, definition: applyUniformToDefinition(form.definition, fixed) };
+  return { ...cataloged, definition: applyUniformToDefinition(cataloged.definition, fixed) };
 }
 
 export async function sbGetUniformTemplateDefinition(): Promise<FormDefinition> {
