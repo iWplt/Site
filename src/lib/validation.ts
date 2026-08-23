@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { flattenFields } from "@/lib/form-definition";
+import { fieldIsVisible, flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
 import type { FormDefinition } from "@/lib/types";
 
@@ -29,11 +29,24 @@ export const submissionSchema = z.object({
   files: z.record(z.string(), z.array(uploadedFileSchema)).default({})
 });
 
-export function validateDynamicAnswers(definition: FormDefinition, answers: Record<string, unknown>) {
+export function validateDynamicAnswers(
+  definition: FormDefinition,
+  answers: Record<string, unknown>,
+  files?: Record<string, unknown[]>
+) {
   const errors: Record<string, string> = {};
 
   for (const field of flattenFields(definition.sections)) {
     if (field.type === "info" || field.type === "section") continue;
+    if (!fieldIsVisible(field, answers)) continue;
+
+    if (["image_upload", "file_upload"].includes(field.type)) {
+      if (field.required && !(files?.[field.key]?.length)) {
+        errors[field.key] = "يرجى إرفاق صورة واحدة على الأقل.";
+      }
+      continue;
+    }
+
     const value = answers[field.key] ?? field.defaultValue;
 
     if (field.locked && field.defaultValue !== undefined && value !== field.defaultValue) {

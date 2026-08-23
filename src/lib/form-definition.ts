@@ -115,7 +115,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
     {
       id: "robe_additions",
       title: "إضافات الروب",
-      description: "إضافات اختيارية على الردن. صورة الخيار مرجع من الإدارة وليست صورة الطالب.",
+      description: "إضافات اختيارية على الردن، مع تصميم الطالب إن وُجدت إضافة.",
       fields: [
         {
           id: "robe_addition",
@@ -125,12 +125,23 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           showOptionImages: true,
           options: [
             { id: "none", label: "بدون إضافة", value: "none", description: "الروب بدون تطريز أو تطعيم إضافي." },
-            { id: "one-sleeve", label: "تطريز ردن واحدة", value: "one_sleeve", description: "تطريز على ردن واحدة حسب التصميم المطلوب." },
+            { id: "one-sleeve", label: "تطريز ردن واحد", value: "one_sleeve", description: "تطريز على ردن واحد حسب التصميم المطلوب." },
             { id: "two-sleeves", label: "تطريز ردن 2", value: "two_sleeves", description: "تطريز على الردنين." },
             { id: "sleeve-color", label: "إضافة لون للردن 5 سم", value: "sleeve_color_5cm", description: "شريط لوني بعرض 5 سم على الردن." },
             { id: "sleeve-color-slit", label: "إضافة لون للردن + فتحة", value: "sleeve_color_slit", description: "إضافة لونية مع فتحة في الردن." }
           ],
           defaultValue: "none"
+        },
+        {
+          ...imageUploadDefaults,
+          id: "robe_addition_image",
+          key: "robe_addition_image",
+          label: "تصميم إضافة الروب",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
+          description: "ارفع تصميم التطريز/الإضافة المطلوبة على الروب.",
+          conditional: [{ fieldKey: "robe_addition", operator: "not_equals", value: "none" }]
         }
       ]
     },
@@ -153,7 +164,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
     {
       id: "sash_embroidery",
       title: "تطريز الوشاح",
-      description: "النصوص والتفاصيل المطلوبة على الوشاح.",
+      description: "نصوص وتفاصيل التطريز وتصاميم الطالب المرتبطة بالوشاح.",
       fields: [
         {
           id: "sash_back_text",
@@ -161,6 +172,17 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "تطريز ظهر الوشاح",
           type: "long_text",
           description: "كتابة النص المطلوب تطريزه في ظهر الوشاح أو تركه فارغاً في حال طلب بدون تطريز.",
+          conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
+        },
+        {
+          ...imageUploadDefaults,
+          id: "sash_back_image",
+          key: "sash_back_image",
+          label: "تصميم ظهر الوشاح",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
+          description: "ارفع تصميم ظهر الوشاح عندما يكون الوشاح مع تطريز ظهر.",
           conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
         },
         {
@@ -185,13 +207,23 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "تطريز جهة السنة",
           type: "short_text",
           description: "كتابة نوع التطريز المطلوب: سنة - اسم القسم - لوكو خاص"
+        },
+        {
+          ...imageUploadDefaults,
+          id: "year_side_image",
+          key: "year_side_image",
+          label: "تصميم جهة السنة",
+          type: "image_upload",
+          uploadMode: "multiple",
+          maxFiles: 5,
+          description: "اختياري — ارفع تصميم جهة السنة إن وُجد."
         }
       ]
     },
     {
       id: "cap",
       title: "القبعة",
-      description: "اختر نوع القبعة والإعدادات المطلوبة.",
+      description: "اختر نوع القبعة، ثم أرفق تصاميم التطريز المرتبطة بها إن لزم.",
       fields: [
         {
           id: "cap_type",
@@ -209,42 +241,6 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           type: "boolean",
           required: true,
           defaultValue: false
-        }
-      ]
-    },
-    {
-      id: "uploads",
-      title: "تصاميم الطالب",
-      description: "صور التصميم الخاصة بك فقط — ليست صور المنتج المرجعية.",
-      fields: [
-        {
-          ...imageUploadDefaults,
-          id: "robe_addition_image",
-          key: "robe_addition_image",
-          label: "تصميم إضافة الروب",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5,
-          conditional: [{ fieldKey: "robe_addition", operator: "not_equals", value: "none" }]
-        },
-        {
-          ...imageUploadDefaults,
-          id: "sash_back_image",
-          key: "sash_back_image",
-          label: "تصميم ظهر الوشاح",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5,
-          conditional: [{ fieldKey: "sash_type", operator: "includes", value: "embroidered" }]
-        },
-        {
-          ...imageUploadDefaults,
-          id: "year_side_image",
-          key: "year_side_image",
-          label: "تصميم جهة السنة",
-          type: "image_upload",
-          uploadMode: "multiple",
-          maxFiles: 5
         },
         {
           ...imageUploadDefaults,
@@ -253,7 +249,8 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "تطريز القبعة الجانبي",
           type: "image_upload",
           uploadMode: "multiple",
-          maxFiles: 5
+          maxFiles: 5,
+          description: "اختياري — تصميم التطريز الجانبي للقبعة."
         },
         {
           ...imageUploadDefaults,
@@ -262,7 +259,8 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           label: "تطريز القبعة من الأعلى (المربع)",
           type: "image_upload",
           uploadMode: "multiple",
-          maxFiles: 5
+          maxFiles: 5,
+          description: "اختياري — تصميم تطريز المربع العلوي للقبعة."
         }
       ]
     }
@@ -277,7 +275,6 @@ export const defaultWizardSteps = [
   "الوشاح",
   "تطريز الوشاح",
   "القبعة",
-  "التصاميم",
   "مراجعة الطلب"
 ];
 

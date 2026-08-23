@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireSupabaseSecretsForWrites } from "@/lib/env";
 import { assertOwnedBookingPath, extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
+import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import {
   accessCodeFingerprint,
   decryptAccessCode,
@@ -223,7 +224,7 @@ function decryptCodeSafe(ciphertext: string | null | undefined): string | undefi
 }
 
 function buildBatchDefaultDefinition(): FormDefinition {
-  return {
+  return normalizeFormCustomizationGrouping({
     ...defaultWarkaFormDefinition,
     sections: defaultWarkaFormDefinition.sections.map((section) => ({
       ...section,
@@ -233,7 +234,7 @@ function buildBatchDefaultDefinition(): FormDefinition {
           : field
       )
     }))
-  };
+  });
 }
 
 async function generateUniqueFormSlug(admin: SupabaseAdminClient, name: string, year: number) {
@@ -279,6 +280,7 @@ function mapBatchRow(row: BatchRow): Batch {
 }
 
 function mapFormRow(row: BookingFormRow): BookingFormRecord {
+  const rawDefinition = (row.definition as FormDefinition | null) ?? defaultWarkaFormDefinition;
   return {
     id: row.id,
     name: row.name,
@@ -291,7 +293,7 @@ function mapFormRow(row: BookingFormRow): BookingFormRecord {
     closing_date: row.closing_date ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    definition: (row.definition as FormDefinition | null) ?? defaultWarkaFormDefinition
+    definition: normalizeFormCustomizationGrouping(rawDefinition)
   };
 }
 
@@ -1107,7 +1109,7 @@ export async function sbSubmitBooking(
   const cataloged = await withCatalogDefinition(formRecord);
   const definition = applyUniformToDefinition(cataloged.definition, fixed);
   const finalAnswers = enforceUniformAnswers({ ...answers, student_name: session.studentName }, fixed);
-  const validation = validateDynamicAnswers(definition, finalAnswers);
+  const validation = validateDynamicAnswers(definition, finalAnswers, files);
   if (!validation.valid) return { ok: false, error: "يرجى مراجعة الحقول المطلوبة." };
 
   const snapshot = buildOrderSnapshot({

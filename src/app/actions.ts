@@ -340,7 +340,7 @@ export async function submitBookingAction(input: unknown) {
         }),
         db.product_categories ?? []
       );
-      const validation = validateDynamicAnswers(definition, answers);
+      const validation = validateDynamicAnswers(definition, answers, parsed.data.files);
       if (!validation.valid) {
         throw new Error("يرجى مراجعة الحقول المطلوبة.");
       }

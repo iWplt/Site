@@ -34,7 +34,7 @@ const definition: FormDefinition = {
         }
       ]
     },
-    { id: "uploads", title: "تصاميم الطالب", fields: [{ id: "cap_top_image", key: "cap_top_image", label: "تطريز", type: "image_upload" }] }
+    { id: "cap", title: "القبعة", fields: [{ id: "cap_top_image", key: "cap_top_image", label: "تطريز", type: "image_upload" }] }
   ]
 };
 
@@ -105,9 +105,9 @@ test("catalog products append to existing robe options and add new category step
   assert.ok(bouquet);
   assert.equal(bouquet?.fields[0]?.options?.[0]?.label, "بوكيه أبيض");
   assert.equal(bouquet?.fields[0]?.options?.[0]?.priceIqd, 15000);
-  const uploadsIndex = merged.sections.findIndex((section) => section.id === "uploads");
+  const capIndex = merged.sections.findIndex((section) => section.id === "cap");
   const bouquetIndex = merged.sections.findIndex((section) => section.id === catalogFieldKey("bouquet"));
-  assert.ok(bouquetIndex >= 0 && bouquetIndex < uploadsIndex);
+  assert.ok(bouquetIndex >= 0 && bouquetIndex > capIndex);
 });
 
 test("empty catalog categories do not create wizard steps", () => {

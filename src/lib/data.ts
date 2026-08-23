@@ -3,6 +3,7 @@ import "server-only";
 import type { AppUser } from "@/lib/auth";
 import { canAccessBatch } from "@/lib/auth";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
+import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, getPersistenceMode } from "@/lib/persistence";
 import {
   getBatchStats,
@@ -140,7 +141,10 @@ export async function getAdminForm(
     if (!form.batch_id) return null;
     if (!(await canAccessBatch(user, form.batch_id))) return null;
   }
-  return { ...form, definition: form.definition ?? defaultWarkaFormDefinition };
+  return {
+    ...form,
+    definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
+  };
 }
 
 export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
@@ -155,7 +159,7 @@ export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
     })
     .map((form) => ({
       ...form,
-      definition: form.definition ?? defaultWarkaFormDefinition
+      definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
     }));
 }
 
@@ -165,7 +169,10 @@ export async function getPublicForm(slug: string, options?: { resolveImages?: bo
   const db = ensureLocal();
   const form = db.forms.find((entry) => entry.slug === slug && entry.status === "published");
   if (!form) return null;
-  return { ...form, definition: form.definition ?? defaultWarkaFormDefinition };
+  return {
+    ...form,
+    definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
+  };
 }
 
 export async function getEffectivePublicForm(slug: string, studentId?: string | null): Promise<BookingFormRecord | null> {

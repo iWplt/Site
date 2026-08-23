@@ -52,12 +52,9 @@ export async function BookingPrintCard({
   const productSections = sections
     .map((section) => ({
       ...section,
-      lines: section.lines.filter((line) => !SKIP_DETAIL_KEYS.has(line.key) && line.studentImages.length === 0)
+      lines: section.lines.filter((line) => !SKIP_DETAIL_KEYS.has(line.key))
     }))
-    .filter((section) => section.lines.length && section.id !== "student" && section.id !== "uploads");
-  const studentUploads = sections.flatMap((section) =>
-    section.lines.flatMap((line) => line.studentImages.map((image) => ({ ...image, label: line.label })))
-  );
+    .filter((section) => section.lines.length && section.id !== "student");
 
   return (
     <div className="booking-print-root mx-auto w-full min-w-0 max-w-[920px]">
@@ -119,23 +116,6 @@ export async function BookingPrintCard({
             <div className="grid gap-3">
               {productSections.map((section) => (
                 <ProductGroup key={section.id} section={section} />
-              ))}
-            </div>
-          </>
-        ) : null}
-
-        {studentUploads.length ? (
-          <>
-            <SectionHeading>تصاميم الطالب</SectionHeading>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {studentUploads.map((image, index) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={`${image.src}-${index}`}
-                  src={image.src}
-                  alt={image.alt}
-                  className="aspect-square w-full rounded-xl border border-[var(--border)] object-cover"
-                />
               ))}
             </div>
           </>
@@ -235,19 +215,34 @@ function ProductGroup({ section }: { section: OrderSectionView }) {
       <h3 className="text-sm font-black text-[var(--olive-dark)]">{section.title}</h3>
       <div className="mt-2 grid gap-2">
         {section.lines.map((line) => (
-          <div key={line.key} className="flex min-w-0 items-center gap-3">
-            {line.referenceImages[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={line.referenceImages[0].src}
-                alt=""
-                className="booking-thumb shrink-0 rounded-lg border border-[var(--border)] object-cover"
-              />
-            ) : null}
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-bold text-[var(--muted)]">{line.label}</p>
-              <p className="break-words text-sm font-black leading-6 text-[var(--olive-dark)]">{line.value}</p>
+          <div key={line.key} className="min-w-0">
+            <div className="flex min-w-0 items-center gap-3">
+              {line.referenceImages[0] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={line.referenceImages[0].src}
+                  alt=""
+                  className="booking-thumb shrink-0 rounded-lg border border-[var(--border)] object-cover"
+                />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold text-[var(--muted)]">{line.label}</p>
+                <p className="break-words text-sm font-black leading-6 text-[var(--olive-dark)]">{line.value}</p>
+              </div>
             </div>
+            {line.studentImages.length ? (
+              <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {line.studentImages.map((image, index) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={`${image.src}-${index}`}
+                    src={image.src}
+                    alt={image.alt}
+                    className="aspect-square w-full rounded-lg border border-[var(--border)] object-cover"
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

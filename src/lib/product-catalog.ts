@@ -8,7 +8,7 @@ import type {
   ProductCategory
 } from "./types";
 
-export const CORE_WIZARD_SECTION_IDS = ["student", "booking", "sash_embroidery", "uploads"] as const;
+export const CORE_WIZARD_SECTION_IDS = ["student", "booking", "sash_embroidery", "cap", "uploads"] as const;
 
 /** Existing wizard fields that catalog products in these slugs can extend. */
 export const CATALOG_LEGACY_FIELD_MAP: Record<string, { fieldKey: string; sectionId: string }> = {
@@ -153,10 +153,14 @@ export function mergeCatalogIntoDefinition(
   }
 
   const uploadsIndex = sections.findIndex((section) => section.id === "uploads");
-  const nextSections =
+  const insertAt =
     uploadsIndex >= 0
-      ? [...sections.slice(0, uploadsIndex), ...extraSections, ...sections.slice(uploadsIndex)]
-      : [...sections, ...extraSections];
+      ? uploadsIndex
+      : (() => {
+          const capIndex = sections.findIndex((section) => section.id === "cap");
+          return capIndex >= 0 ? capIndex + 1 : sections.length;
+        })();
+  const nextSections = [...sections.slice(0, insertAt), ...extraSections, ...sections.slice(insertAt)];
 
   return { ...definition, sections: nextSections };
 }

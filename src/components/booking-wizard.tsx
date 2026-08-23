@@ -52,20 +52,24 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState<SuccessState | null>(null);
   const [isPending, startTransition] = useTransition();
-  const sections = useMemo(
-    () => form.definition.sections.filter((section) => section.fields.length > 0),
-    [form.definition.sections]
-  );
-  const isReview = step >= sections.length;
+
+  const sections = useMemo(() => {
+    return form.definition.sections.filter((section) =>
+      section.fields.some((field) => fieldIsVisible(field, answers))
+    );
+  }, [answers, form.definition.sections]);
+
+  const activeStep = Math.min(step, sections.length);
+  const isReview = activeStep >= sections.length;
   const stepLabels = [...sections.map((section) => section.title), "مراجعة الطلب"];
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [step]);
+  }, [activeStep]);
 
   const visibleFields = useMemo(
-    () => sections[step]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? [],
-    [answers, sections, step]
+    () => sections[activeStep]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? [],
+    [answers, sections, activeStep]
   );
 
   function setAnswer(key: string, value: unknown) {
@@ -133,15 +137,15 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
           <div className="shrink-0 rounded-2xl bg-[#3f472d10] px-3 py-2 text-center">
             <p className="text-[10px] font-bold text-[var(--muted)]">الخطوة</p>
             <p className="text-lg font-black text-[var(--olive)]">
-              {Math.min(step + 1, stepLabels.length)}/{stepLabels.length}
+              {Math.min(activeStep + 1, stepLabels.length)}/{stepLabels.length}
             </p>
           </div>
         </div>
         <ol className="mt-4 flex gap-1 overflow-x-auto pb-1">
           {stepLabels.map((label, index) => (
             <li key={`${label}-${index}`} className="min-w-[4.5rem] flex-1">
-              <div className={cn("h-1.5 rounded-full", index <= step ? "bg-[var(--olive)]" : "bg-[var(--sand)]")} />
-              <p className={cn("mt-1 truncate text-[10px] font-bold", index === step ? "text-[var(--olive-dark)]" : "text-[var(--muted)]")}>{label}</p>
+              <div className={cn("h-1.5 rounded-full", index <= activeStep ? "bg-[var(--olive)]" : "bg-[var(--sand)]")} />
+              <p className={cn("mt-1 truncate text-[10px] font-bold", index === activeStep ? "text-[var(--olive-dark)]" : "text-[var(--muted)]")}>{label}</p>
             </li>
           ))}
         </ol>
@@ -153,15 +157,15 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
           answers={answers}
           files={files}
           pending={isPending}
-          onBack={() => setStep(sections.length - 1)}
+          onBack={() => setStep(Math.max(0, sections.length - 1))}
           onSubmit={submit}
           error={errors.form}
         />
       ) : (
         <Card className="!rounded-[1.35rem]">
-          <p className="text-xs font-bold text-[var(--gold)]">{String(step + 1).padStart(2, "0")}</p>
-          <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[step].title}</h2>
-          {sections[step].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[step].description}</p> : null}
+          <p className="text-xs font-bold text-[var(--gold)]">{String(activeStep + 1).padStart(2, "0")}</p>
+          <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[activeStep].title}</h2>
+          {sections[activeStep].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[activeStep].description}</p> : null}
           <div className="mt-6 grid gap-6">
             {visibleFields.map((field, fieldIndex) => (
               <FieldRenderer
@@ -183,10 +187,10 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
       {!isReview ? (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[rgba(246,239,225,0.97)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex max-w-3xl gap-3">
-            <Button className="min-h-12 flex-1" variant="secondary" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>
+            <Button className="min-h-12 flex-1" variant="secondary" disabled={activeStep === 0} onClick={() => setStep((current) => Math.max(0, Math.min(current, sections.length) - 1))}>
               <ChevronRight size={16} className="inline" /> رجوع
             </Button>
-            <Button className="min-h-12 flex-1" onClick={() => validateStep() && setStep((current) => current + 1)}>
+            <Button className="min-h-12 flex-1" onClick={() => validateStep() && setStep((current) => Math.min(sections.length, Math.min(current, sections.length) + 1))}>
               متابعة <ChevronLeft size={16} className="inline" />
             </Button>
           </div>
@@ -406,16 +410,33 @@ function FieldRenderer({
         </div>
       ) : null}
       {["image_upload", "file_upload"].includes(field.type) ? (
-        <MultipleImageUpload
-          fieldKey={field.key}
-          label="الصورة المرفقة من الطالب"
-          accept={field.accept}
-          multiple={field.uploadMode === "multiple"}
-          maxFiles={field.uploadMode === "multiple" ? Math.min(field.maxFiles ?? 5, 5) : 1}
-          value={files}
-          onChange={onFiles}
-          error={error}
-        />
+        <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/55 p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-bold",
+                field.required ? "bg-[#9d2f2f12] text-[var(--danger)]" : "bg-[#3f472d12] text-[var(--olive)]"
+              )}
+            >
+              {field.required ? "مطلوب" : "اختياري"}
+            </span>
+            {field.uploadMode === "multiple" ? (
+              <span className="text-xs font-bold text-[var(--muted)]">
+                حتى {Math.min(field.maxFiles ?? 5, 5)} صور
+              </span>
+            ) : null}
+          </div>
+          <MultipleImageUpload
+            fieldKey={field.key}
+            label="المرفقات"
+            accept={field.accept}
+            multiple={field.uploadMode === "multiple"}
+            maxFiles={field.uploadMode === "multiple" ? Math.min(field.maxFiles ?? 5, 5) : 1}
+            value={files}
+            onChange={onFiles}
+            error={error}
+          />
+        </div>
       ) : null}
       {error && !["image_upload", "file_upload"].includes(field.type) ? (
         <p className="mt-2 text-sm font-bold text-[var(--danger)]">{error}</p>

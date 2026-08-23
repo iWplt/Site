@@ -148,7 +148,6 @@ export function MultipleImageUpload({
             <input
               type="file"
               accept={accept.join(",")}
-              capture="environment"
               multiple={multiple}
               className="hidden"
               onChange={(event) => {

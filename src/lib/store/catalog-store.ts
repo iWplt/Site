@@ -2,7 +2,13 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { AppUser } from "@/lib/auth";
-import { DEFAULT_PRODUCT_CATEGORIES, filterAvailableProducts, mergeCatalogIntoDefinition, type CatalogAudience } from "@/lib/product-catalog";
+import {
+  DEFAULT_PRODUCT_CATEGORIES,
+  filterAvailableProducts,
+  mergeCatalogIntoDefinition,
+  type CatalogAudience
+} from "@/lib/product-catalog";
+import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import type {
   BookingFormRecord,
   CatalogProduct,
@@ -418,6 +424,10 @@ export async function saveCatalogProductImage(productId: string, file: { buffer:
 }
 
 export async function withCatalogDefinition(form: BookingFormRecord): Promise<BookingFormRecord> {
+  const base = {
+    ...form,
+    definition: normalizeFormCustomizationGrouping(form.definition)
+  };
   try {
     const [products, categories] = await Promise.all([
       listAvailableCatalogProducts({
@@ -427,8 +437,8 @@ export async function withCatalogDefinition(form: BookingFormRecord): Promise<Bo
       }),
       listProductCategories()
     ]);
-    return { ...form, definition: mergeCatalogIntoDefinition(form.definition, products, categories) };
+    return { ...base, definition: mergeCatalogIntoDefinition(base.definition, products, categories) };
   } catch {
-    return form;
+    return base;
   }
 }
