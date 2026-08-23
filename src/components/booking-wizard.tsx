@@ -12,6 +12,7 @@ import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
 import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
+import { requiredUploadError } from "@/lib/required-upload";
 import type { BookingFormRecord, FormField } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -85,14 +86,17 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
     const nextErrors: Record<string, string> = {};
     for (const field of visibleFields) {
       const value = answers[field.key];
+      const isUpload = ["image_upload", "file_upload"].includes(field.type);
+      if (isUpload) {
+        const uploadError = requiredUploadError(files[field.key], field.required);
+        if (uploadError) nextErrors[field.key] = uploadError;
+        continue;
+      }
       if (field.required && (value === undefined || value === null || value === "")) {
         nextErrors[field.key] = "هذا الحقل مطلوب.";
       }
       if (field.type === "phone" && value && !/^(\+?964|0)?7[0-9\s-]{8,12}$/.test(String(value))) {
         nextErrors[field.key] = "يرجى إدخال رقم هاتف عراقي صحيح.";
-      }
-      if (["image_upload", "file_upload"].includes(field.type) && field.required && !files[field.key]?.length) {
-        nextErrors[field.key] = "يرجى إرفاق صورة واحدة على الأقل.";
       }
     }
     setErrors(nextErrors);

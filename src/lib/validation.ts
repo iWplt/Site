@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fieldIsVisible, flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
+import { requiredUploadError } from "@/lib/required-upload";
 import type { FormDefinition } from "@/lib/types";
 
 export const phoneSchema = z
@@ -41,9 +42,8 @@ export function validateDynamicAnswers(
     if (!fieldIsVisible(field, answers)) continue;
 
     if (["image_upload", "file_upload"].includes(field.type)) {
-      if (field.required && !(files?.[field.key]?.length)) {
-        errors[field.key] = "يرجى إرفاق صورة واحدة على الأقل.";
-      }
+      const uploadError = requiredUploadError(files?.[field.key], field.required);
+      if (uploadError) errors[field.key] = uploadError;
       continue;
     }
 
