@@ -50,7 +50,7 @@ export function CreateIndividualStudentForm({ definition }: { definition: FormDe
         </div>
         <div>
           <h3 className="mb-2 font-black text-[var(--olive-dark)]">تثبيت خيارات لهذا الطالب (اختياري)</h3>
-          <p className="mb-3 text-sm text-[var(--muted)]">يمكن ترك الحقول ليختار الطالب، أو تثبيت زي محدد له فقط.</p>
+          <p className="mb-3 text-sm text-[var(--muted)]">يثبّت خيارات من منتجات النموذج المفعّلة فقط، أو اتركها فارغة ليختار الطالب.</p>
           <UniformPicker definition={definition} />
         </div>
         {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}

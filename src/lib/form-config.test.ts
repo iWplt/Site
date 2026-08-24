@@ -9,27 +9,32 @@ test("warns when a visible core product has no enabled models", () => {
     ...defaultWarkaFormDefinition,
     sections: defaultWarkaFormDefinition.sections.map((section) => ({
       ...section,
-      fields: section.fields.map((field) =>
-        field.key === "robe_model" ? { ...field, options: field.options?.map((option) => ({ ...option, enabled: false })) } : field
-      )
+      fields: section.fields.map((field) => (field.key === "robe_model" ? { ...field, options: [] } : field))
     }))
   };
   const warnings = formConfigurationWarnings(definition);
   assert.ok(warnings.some((warning) => warning.id === "no-models-robe"));
 });
 
-test("warns when a stored full outfit omits a core product", () => {
+test("warns when an outfit includes a product disabled on the form", () => {
   const definition: FormDefinition = {
     ...defaultWarkaFormDefinition,
+    sections: defaultWarkaFormDefinition.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) =>
+        field.key === "cap_type" ? { ...field, options: field.options?.map((option) => ({ ...option, enabled: false })) } : field
+      )
+    })),
     outfitConfig: {
-      fullOutfits: [{ id: "broken", name: "ناقص", enabled: true, productOrder: ["robe"] }],
+      fullOutfits: [{ id: "royal", name: "زي ملكي", enabled: true, productOrder: ["robe", "sash", "cap"] }],
       singleItemEnabled: true,
       singleItemProducts: ["robe", "sash", "cap"],
       productOrder: ["robe", "sash", "cap"]
     }
   };
   const warnings = formConfigurationWarnings(definition);
-  assert.ok(warnings.some((warning) => warning.id === "outfit-incomplete-broken"));
+  assert.ok(warnings.some((warning) => warning.id === "outfit-disabled-royal"));
+  assert.equal(warnings.some((warning) => warning.id === "outfit-incomplete-royal"), false);
 });
 
 test("copy form config copies outfits and single-item settings without touching unrelated name", () => {

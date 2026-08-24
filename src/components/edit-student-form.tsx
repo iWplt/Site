@@ -45,7 +45,7 @@ export function EditStudentForm({
         {!student.batch_id ? (
           <div>
             <h2 className="mb-3 text-xl font-black text-[var(--olive-dark)]">تثبيت خيارات لهذا الطالب</h2>
-            <p className="mb-3 text-sm text-[var(--muted)]">اترك الحقول فارغة ليختار الطالب بنفسه.</p>
+            <p className="mb-3 text-sm text-[var(--muted)]">يثبّت خيارات من منتجات النموذج المفعّلة فقط. اترك الحقول فارغة ليختار الطالب بنفسه.</p>
             <UniformPicker definition={definition} value={uniform} />
           </div>
         ) : null}

@@ -301,7 +301,7 @@ function AssignedOutfitProducts({ answers }: { answers: Record<string, unknown> 
   const products = asStringList(answers.selected_products).filter((id): id is (typeof CORE_PRODUCT_IDS)[number] =>
     CORE_PRODUCT_IDS.includes(id as (typeof CORE_PRODUCT_IDS)[number])
   );
-  const ordered = products.length ? products : [...CORE_PRODUCT_IDS];
+  if (!products.length) return null;
   return (
     <div className="mt-4 rounded-[1.2rem] border border-[var(--border)] bg-[#3f472d0d] p-4">
       <p className="text-sm font-black text-[var(--olive-dark)]">المنتجات المشمولة في هذا الزي</p>
@@ -309,7 +309,7 @@ function AssignedOutfitProducts({ answers }: { answers: Record<string, unknown> 
         هذه القطع ثابتة حسب إعداد الإدارة. يمكنك تخصيص كل قطعة لاحقاً، ولا يمكن إضافة أو حذف أو استبدال منتج.
       </p>
       <ul className="mt-3 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
-        {ordered.map((product) => (
+        {products.map((product) => (
           <li key={product}>- {CORE_PRODUCT_LABELS[product]}</li>
         ))}
       </ul>

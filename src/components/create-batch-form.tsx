@@ -70,7 +70,9 @@ export function CreateBatchForm({
         </div>
         <div>
           <h2 className="text-xl font-black text-[var(--olive-dark)]">الزي الموحد للدفعة</h2>
-          <p className="mb-3 mt-1 text-sm text-[var(--muted)]">ثبت خيارات المنتج لهذه الدفعة. الحقول الشخصية تبقى للطالب.</p>
+          <p className="mb-3 mt-1 text-sm text-[var(--muted)]">
+            يثبّت خيارات من منتجات النموذج المفعّلة فقط. لا يضيف منتجات جديدة ولا يدير قائمة مستقلة.
+          </p>
           <UniformPicker definition={definition} />
         </div>
         {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}

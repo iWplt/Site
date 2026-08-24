@@ -18,6 +18,12 @@ export const CORE_PRODUCT_LABELS: Record<CoreProductId, string> = {
   cap: "القبعة"
 };
 
+export const PRODUCT_MODEL_KEYS: Record<CoreProductId, string> = {
+  robe: "robe_model",
+  sash: "sash_type",
+  cap: "cap_type"
+};
+
 export const CHILD_SECTION_PARENTS: Record<string, CoreProductId> = {
   robe_additions: "robe",
   sash_embroidery: "sash"
@@ -64,20 +70,48 @@ export function ensureCoreProductOrder(order?: string[] | null): CoreProductId[]
   return [...requested, ...CORE_PRODUCT_IDS.filter((id) => !requested.includes(id))];
 }
 
-export function sanitizeOutfitConfig(raw?: OutfitConfig | null): OutfitConfig {
+export function formEnabledCoreProducts(definition: FormDefinition): CoreProductId[] {
+  const fields = definition.sections.flatMap((section) => section.fields);
+  const enabled = CORE_PRODUCT_IDS.filter((product) => {
+    const field = fields.find((entry) => entry.key === PRODUCT_MODEL_KEYS[product]);
+    if (!field) return true;
+    const options = field.options ?? [];
+    if (!options.length) return true;
+    return options.some((option) => option.enabled !== false);
+  });
+  return enabled.length ? enabled : [...CORE_PRODUCT_IDS];
+}
+
+export function constrainToEnabledProducts(order: string[] | null | undefined, enabled: CoreProductId[]): CoreProductId[] {
+  const allowed = enabled.length ? enabled : [...CORE_PRODUCT_IDS];
+  return (order ?? []).filter((id): id is CoreProductId => allowed.includes(id as CoreProductId));
+}
+
+function membershipFromFormProducts(order: string[] | null | undefined, enabled: CoreProductId[]): CoreProductId[] {
+  const constrained = constrainToEnabledProducts(order, enabled);
+  if (constrained.length) return constrained;
+  if (order?.length) return [];
+  return enabled.length ? [...enabled] : [...CORE_PRODUCT_IDS];
+}
+
+export function liveOutfitConfig(definition: FormDefinition): OutfitConfig {
+  return sanitizeOutfitConfig(definition.outfitConfig, formEnabledCoreProducts(definition));
+}
+
+export function sanitizeOutfitConfig(raw?: OutfitConfig | null, enabledProducts?: CoreProductId[] | null): OutfitConfig {
   const fallback = defaultOutfitConfig();
+  const enabled = enabledProducts?.length ? enabledProducts : [...CORE_PRODUCT_IDS];
   const productOrder = ensureCoreProductOrder(raw?.productOrder);
-  const singleItemProducts = ensureCoreProductOrder(raw?.singleItemProducts ?? productOrder).filter((id) =>
-    (raw?.singleItemProducts?.length ? raw.singleItemProducts : CORE_PRODUCT_IDS).includes(id)
-  );
+  const requestedSingle = raw?.singleItemProducts?.length ? raw.singleItemProducts : enabled;
+  const singleItemProducts = constrainToEnabledProducts(requestedSingle, enabled);
   const outfits = (raw?.fullOutfits?.length ? raw.fullOutfits : fallback.fullOutfits)
-    .map((outfit, index) => sanitizeFullOutfit(outfit, index, productOrder))
+    .map((outfit, index) => sanitizeFullOutfit(outfit, index, productOrder, enabled))
     .filter((outfit): outfit is FullOutfit => Boolean(outfit));
 
   return {
-    fullOutfits: outfits.length ? outfits : fallback.fullOutfits,
+    fullOutfits: outfits.length ? outfits : fallback.fullOutfits.map((outfit) => sanitizeFullOutfit(outfit, 0, productOrder, enabled)!),
     singleItemEnabled: raw?.singleItemEnabled !== false,
-    singleItemProducts: singleItemProducts.length ? singleItemProducts : [...CORE_PRODUCT_IDS],
+    singleItemProducts: singleItemProducts.length ? singleItemProducts : [...enabled],
     productOrder,
     catalogAssignments: sanitizeCatalogAssignments(raw?.catalogAssignments)
   };
@@ -118,7 +152,12 @@ function sanitizeProductImages(raw?: FullOutfit["productImages"]): FullOutfit["p
   return Object.keys(next).length ? next : undefined;
 }
 
-function sanitizeFullOutfit(outfit: FullOutfit, index: number, fallbackOrder: CoreProductId[]): FullOutfit | null {
+function sanitizeFullOutfit(
+  outfit: FullOutfit,
+  index: number,
+  fallbackOrder: CoreProductId[],
+  enabled: CoreProductId[]
+): FullOutfit | null {
   const name = outfit.name?.trim();
   if (!name) return null;
   return {
@@ -128,7 +167,7 @@ function sanitizeFullOutfit(outfit: FullOutfit, index: number, fallbackOrder: Co
     imageUrl: outfit.imageUrl?.trim() || undefined,
     imagePath: outfit.imagePath?.trim() || undefined,
     enabled: outfit.enabled !== false,
-    productOrder: ensureCoreProductOrder(outfit.productOrder ?? fallbackOrder),
+    productOrder: membershipFromFormProducts(outfit.productOrder ?? fallbackOrder, enabled),
     productImages: sanitizeProductImages(outfit.productImages)
   };
 }
@@ -139,7 +178,7 @@ export function enabledFullOutfits(config: OutfitConfig) {
 }
 
 export function resolveSelectedOutfit(definition: FormDefinition, answers: Record<string, unknown>) {
-  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const config = liveOutfitConfig(definition);
   const outfits = enabledFullOutfits(config);
   if (String(answers.booking_type) === "single_pieces" && config.singleItemEnabled) return undefined;
   return outfits.find((outfit) => outfit.id === answers.full_outfit_id) ?? outfits[0];
@@ -168,7 +207,7 @@ export function isBlankValue(value: unknown) {
 }
 
 export function resolveOutfitAnswers(definition: FormDefinition, answers: Record<string, unknown>) {
-  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const config = liveOutfitConfig(definition);
   const next = { ...answers };
   const bookingType = String(next.booking_type ?? "full_set");
   const outfits = enabledFullOutfits(config);
@@ -200,7 +239,7 @@ export function productIsSelected(answers: Record<string, unknown>, product: Cor
 }
 
 export function isSingleItemBooking(definition: FormDefinition, answers: Record<string, unknown>) {
-  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const config = liveOutfitConfig(definition);
   return String(answers.booking_type) === "single_pieces" && config.singleItemEnabled;
 }
 
@@ -211,7 +250,7 @@ export function isSingleItemBooking(definition: FormDefinition, answers: Record<
  * Field keys are never renamed.
  */
 export function applyOutfitArchitecture(definition: FormDefinition): FormDefinition {
-  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const config = liveOutfitConfig(definition);
   const sections = definition.sections.map((section) => ({
     ...section,
     fields: section.fields.map((field) => ({ ...field, options: field.options ? field.options.map((option) => ({ ...option, children: option.children ? [...option.children] : option.children })) : field.options }))

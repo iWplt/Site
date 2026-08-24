@@ -22,7 +22,7 @@ export function BatchUniformForm({
     <Card className="!rounded-[1.35rem]">
       <h2 className="text-2xl font-black text-[var(--olive-dark)]">تثبيت خيارات الزي للدفعة</h2>
       <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-        يثبّت هذا الاختيار موديلات الروب والوشاح والقبعة من منتجات هذا النموذج، فيظهر للطلاب الخيار المثبت فقط. لا يضيف منتجات جديدة ولا يغيّر الكتالوج. الطلبات السابقة لا تتأثر.
+        يثبّت هذا الاختيار موديلات وخيارات من منتجات هذا النموذج المفعّلة، فيظهر للطلاب الخيار المثبت فقط. لا يضيف منتجات جديدة ولا يغيّر الكتالوج. الطلبات السابقة لا تتأثر.
       </p>
       <LinkButton href={`/admin/forms/${formId}?tab=products`} variant="secondary" size="sm" className="mt-3">
         منتجات النموذج

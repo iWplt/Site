@@ -1,11 +1,14 @@
-import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, sanitizeOutfitConfig } from "./outfit-architecture.ts";
+import {
+  CORE_PRODUCT_IDS,
+  CORE_PRODUCT_LABELS,
+  PRODUCT_MODEL_KEYS,
+  constrainToEnabledProducts,
+  formEnabledCoreProducts,
+  sanitizeOutfitConfig
+} from "./outfit-architecture.ts";
 import type { FormDefinition, FormField, FormOption, FormSection, OutfitConfig } from "./types";
 
-export const PRODUCT_MODEL_KEYS: Record<(typeof CORE_PRODUCT_IDS)[number], string> = {
-  robe: "robe_model",
-  sash: "sash_type",
-  cap: "cap_type"
-};
+export { PRODUCT_MODEL_KEYS };
 
 export type FormConfigWarning = {
   id: string;
@@ -44,26 +47,36 @@ export function enabledModels(field?: FormField) {
 }
 
 export function formConfigurationWarnings(definition: FormDefinition): FormConfigWarning[] {
-  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const enabled = formEnabledCoreProducts(definition);
+  const config = sanitizeOutfitConfig(definition.outfitConfig, enabled);
   const warnings: FormConfigWarning[] = [];
 
   for (const outfit of definition.outfitConfig?.fullOutfits ?? config.fullOutfits) {
     if (outfit.enabled === false) continue;
-    const order = outfit.productOrder ?? definition.outfitConfig?.productOrder ?? [];
-    const missing = CORE_PRODUCT_IDS.filter((id) => !order.includes(id));
-    if (missing.length && outfit.productOrder) {
+    const order = outfit.productOrder ?? [];
+    const dropped = order.filter((id) => CORE_PRODUCT_IDS.includes(id as (typeof CORE_PRODUCT_IDS)[number]) && !enabled.includes(id as (typeof CORE_PRODUCT_IDS)[number]));
+    if (dropped.length) {
       warnings.push({
-        id: `outfit-incomplete-${outfit.id}`,
-        message: `⚠️ هذا الزي غير مكتمل. يجب أن يحتوي الزي الكامل على روب ووشاح وقبعة.`
+        id: `outfit-disabled-${outfit.id}`,
+        message: `⚠️ هذا الزي يشير إلى منتجات غير مفعّلة في النموذج وسيتم تجاهلها.`
+      });
+    }
+    if (!constrainToEnabledProducts(order.length ? order : enabled, enabled).length) {
+      warnings.push({
+        id: `outfit-empty-${outfit.id}`,
+        message: `⚠️ هذا الزي لا يحتوي على منتجات مفعّلة في النموذج.`
       });
     }
   }
 
   for (const product of CORE_PRODUCT_IDS) {
     const field = fieldByKey(definition, PRODUCT_MODEL_KEYS[product]);
-    if (!field) continue;
+    if (!field || !enabled.includes(product)) continue;
     const visibleInSingle = config.singleItemProducts.includes(product);
-    if (!enabledModels(field).length && (visibleInSingle || config.fullOutfits.some((outfit) => outfit.enabled !== false))) {
+    const visibleInOutfit = config.fullOutfits.some(
+      (outfit) => outfit.enabled !== false && (outfit.productOrder ?? []).includes(product)
+    );
+    if (!enabledModels(field).length && (visibleInSingle || visibleInOutfit)) {
       warnings.push({
         id: `no-models-${product}`,
         message: `⚠️ ${CORE_PRODUCT_LABELS[product]} ظاهر للطلاب ولكن لا توجد موديلات متاحة.`

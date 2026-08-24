@@ -1,5 +1,6 @@
 import { findSelectedOption } from "@/lib/form-definition";
-import type { FormDefinition, FormOption } from "@/lib/types";
+import { formEnabledCoreProducts } from "@/lib/outfit-architecture";
+import type { CoreProductId, FormDefinition, FormOption } from "@/lib/types";
 
 export const UNIFORM_PRODUCT_KEYS = [
   "booking_type",
@@ -18,6 +19,13 @@ export const UNIFORM_FIELD_LABELS: Record<UniformProductKey, string> = {
   robe_addition: "إضافات الروب",
   sash_type: "نوع الوشاح",
   cap_type: "نوع القبعة"
+};
+
+export const UNIFORM_FIELD_PRODUCT: Partial<Record<UniformProductKey, CoreProductId>> = {
+  robe_model: "robe",
+  robe_addition: "robe",
+  sash_type: "sash",
+  cap_type: "cap"
 };
 
 export const INDIVIDUAL_FORM_SLUG = "individual";
@@ -54,6 +62,7 @@ export function applyUniformToDefinition(
   const entries = Object.entries(fixed).filter(([, value]) => value);
   if (!entries.length) return definition;
 
+  const enabledProducts = formEnabledCoreProducts(definition);
   return {
     ...definition,
     sections: definition.sections.map((section) => ({
@@ -61,6 +70,8 @@ export function applyUniformToDefinition(
       fields: section.fields.map((field) => {
         const value = fixed[field.key as UniformProductKey];
         if (!value || !field.options?.length) return field;
+        const product = UNIFORM_FIELD_PRODUCT[field.key as UniformProductKey];
+        if (product && !enabledProducts.includes(product)) return field;
         const options = narrowOptions(field.options, value);
         if (!options.length) return field;
         return {

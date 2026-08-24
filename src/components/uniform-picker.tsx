@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { OptimizedThumb } from "@/components/optimized-thumb";
-import { UNIFORM_FIELD_LABELS, UNIFORM_PRODUCT_KEYS, type UniformSelectionMap } from "@/lib/form-uniform";
+import { UNIFORM_FIELD_LABELS, UNIFORM_FIELD_PRODUCT, UNIFORM_PRODUCT_KEYS, type UniformSelectionMap } from "@/lib/form-uniform";
 import { findSelectedOption } from "@/lib/form-definition";
+import { formEnabledCoreProducts } from "@/lib/outfit-architecture";
 import type { FormDefinition } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -18,22 +19,29 @@ export function UniformPicker({
 }) {
   const [current, setCurrent] = useState<UniformSelectionMap>(value);
   const fields = definition.sections.flatMap((section) => section.fields);
+  const enabledProducts = formEnabledCoreProducts(definition);
 
   return (
     <div className="grid gap-5">
       {UNIFORM_PRODUCT_KEYS.map((key) => {
+        const product = UNIFORM_FIELD_PRODUCT[key];
+        if (product && !enabledProducts.includes(product)) return null;
         const field = fields.find((entry) => entry.key === key);
         if (!field?.options?.length) return null;
         const selected = current[key] ?? "";
-        const flat = field.options.flatMap((option) =>
-          option.children?.length
-            ? option.children.map((child) => ({
-                value: child.value,
-                label: `${option.label} - ${child.label}`,
-                image: child.imageUrl || option.imageUrl
-              }))
-            : [{ value: option.value, label: option.label, image: option.imageUrl }]
-        );
+        const flat = field.options.flatMap((option) => {
+          if (option.enabled === false) return [];
+          const children = (option.children ?? []).filter((child) => child.enabled !== false);
+          if (children.length) {
+            return children.map((child) => ({
+              value: child.value,
+              label: `${option.label} - ${child.label}`,
+              image: child.imageUrl || option.imageUrl
+            }));
+          }
+          return [{ value: option.value, label: option.label, image: option.imageUrl }];
+        });
+        if (!flat.length && key !== "booking_type") return null;
         return (
           <fieldset key={key} className="rounded-[1.35rem] border border-[var(--border)] bg-white/60 p-3 sm:p-4">
             <legend className="px-1 text-sm font-black text-[var(--olive-dark)]">{UNIFORM_FIELD_LABELS[key]}</legend>

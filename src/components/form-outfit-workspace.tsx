@@ -13,7 +13,7 @@ import {
   uploadOutfitImageAction
 } from "@/app/actions";
 import { Button, Card, FieldLabel, LinkButton, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
-import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, constrainToEnabledProducts, formEnabledCoreProducts, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
 import { OUTFIT_PRESETS, PRODUCT_MODEL_KEYS } from "@/lib/form-config";
 import type {
   CoreProductId,
@@ -39,13 +39,14 @@ export function FormOutfitWorkspace({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [config, setConfig] = useState<OutfitConfig>(() => sanitizeOutfitConfig(definition.outfitConfig));
+  const [config, setConfig] = useState<OutfitConfig>(() => sanitizeOutfitConfig(definition.outfitConfig, formEnabledCoreProducts(definition)));
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<string>();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | CoreProductId>("all");
+  const enabledProducts = useMemo(() => formEnabledCoreProducts(definition), [definition]);
 
   const fieldsByKey = useMemo(() => {
     const map = new Map<string, FormField>();
@@ -55,13 +56,18 @@ export function FormOutfitWorkspace({
     return map;
   }, [definition.sections]);
 
-  function markConfig(next: OutfitConfig) {
-    setConfig(
-      sanitizeOutfitConfig({
+  function liveConfig(next: OutfitConfig) {
+    return sanitizeOutfitConfig(
+      {
         ...next,
         catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
-      })
+      },
+      enabledProducts
     );
+  }
+
+  function markConfig(next: OutfitConfig) {
+    setConfig(liveConfig(next));
     setDirty(true);
     setSaved(false);
   }
@@ -69,13 +75,7 @@ export function FormOutfitWorkspace({
   function saveConfig() {
     if (!canManage) return;
     startTransition(async () => {
-      await updateFormOutfitConfigAction(
-        formId,
-        sanitizeOutfitConfig({
-          ...config,
-          catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
-        })
-      );
+      await updateFormOutfitConfigAction(formId, liveConfig(config));
       setDirty(false);
       setSaved(true);
       setMessage("✓ تم الحفظ");
@@ -135,10 +135,10 @@ export function FormOutfitWorkspace({
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">منتجات النموذج</h2>
             <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
-              الأزياء إعدادات فوق منتجات هذا النموذج. الزي الكامل يستخدم دائماً الروب والوشاح والقبعة، والطالب يخصص كل قطعة دون حذفها. إدارة الموديلات والتخصيصات من تبويب المنتجات.
+              الأزياء تختار من منتجات هذا النموذج المفعّلة فقط. إنشاء المنتجات وتفعيلها وموديلاتها وتخصيصاتها من تبويب المنتجات.
             </p>
             <ul className="mt-3 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
-              {CORE_PRODUCT_IDS.map((product) => (
+              {enabledProducts.map((product) => (
                 <li key={product}>- {CORE_PRODUCT_LABELS[product]}</li>
               ))}
             </ul>
@@ -150,7 +150,7 @@ export function FormOutfitWorkspace({
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">الأزياء الكاملة</h2>
             <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
-              كل زي إعداد فوق منتجات النموذج: روب ووشاح وقبعة دائماً. الطالب يخصص كل قطعة، ولا يمكنه إضافة أو حذف أو استبدال المنتجات.
+              كل زي يحدد أي منتجات النموذج تنتمي إليه وترتيبها. الطالب يخصص كل قطعة مشمولة، ولا يمكنه إضافة أو حذف أو استبدال المنتجات.
             </p>
             <div className="mt-4 grid gap-3">
               {config.fullOutfits.map((outfit, index) => (
@@ -158,6 +158,7 @@ export function FormOutfitWorkspace({
                   key={outfit.id}
                   formId={formId}
                   outfit={outfit}
+                  enabledProducts={enabledProducts}
                   disabled={!canManage || pending}
                   onChange={(patch) => {
                     const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
@@ -165,10 +166,9 @@ export function FormOutfitWorkspace({
                   }}
                   onImagesChange={(patch) => {
                     setConfig((current) =>
-                      sanitizeOutfitConfig({
+                      liveConfig({
                         ...current,
-                        fullOutfits: current.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry)),
-                        catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+                        fullOutfits: current.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry))
                       })
                     );
                     router.refresh();
@@ -208,7 +208,7 @@ export function FormOutfitWorkspace({
                               name: preset.name,
                               description: preset.description,
                               enabled: true,
-                              productOrder: [...CORE_PRODUCT_IDS]
+                              productOrder: [...enabledProducts]
                             }
                           ]
                         })
@@ -234,10 +234,10 @@ export function FormOutfitWorkspace({
               السماح للطلاب بحجز قطع منفردة
             </label>
             <p className="mt-2 text-sm text-[var(--muted)]">
-              الحجز المفرد يستخدم منتجات النموذج نفسها. حدّد القطع المسموح حجزها منفردة دون تغيير الزي الكامل.
+              الحجز المفرد يستخدم منتجات النموذج المفعّلة نفسها. حدّد القطع المسموح حجزها منفردة دون إنشاء منتجات جديدة.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {CORE_PRODUCT_IDS.map((product) => {
+              {enabledProducts.map((product) => {
                 const checked = config.singleItemProducts.includes(product);
                 return (
                   <label key={product} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-4 py-2 text-sm font-bold">
@@ -267,7 +267,7 @@ export function FormOutfitWorkspace({
             <Card>
               <h2 className="text-xl font-black text-[var(--olive-dark)]">ترتيب المنتجات في نموذج الطالب</h2>
               <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
-                هذا الترتيب عام لنموذج الطالب. قياسات الروب تنتقل مع الروب. الزي الكامل يبقى روب ووشاح وقبعة مهما تغيّر الترتيب.
+                هذا الترتيب عام لنموذج الطالب. قياسات الروب تنتقل مع الروب. الزي الكامل يستخدم فقط المنتجات التي اخترتها داخل ذلك الزي.
               </p>
               <ol className="mt-4 grid gap-2">
                 {config.productOrder.map((product, index) => (
@@ -446,6 +446,7 @@ function OutfitImageSlot({
 function OutfitEditor({
   formId,
   outfit,
+  enabledProducts,
   disabled,
   onChange,
   onImagesChange,
@@ -453,11 +454,13 @@ function OutfitEditor({
 }: {
   formId: string;
   outfit: FullOutfit;
+  enabledProducts: CoreProductId[];
   disabled: boolean;
   onChange: (patch: Partial<FullOutfit>) => void;
   onImagesChange: (patch: Partial<FullOutfit>) => void;
   onArchive: () => void;
 }) {
+  const selectedProducts = constrainToEnabledProducts(outfit.productOrder, enabledProducts);
   return (
     <div className={cn("rounded-[1.2rem] border border-[var(--border)] bg-white/60 p-4", outfit.enabled === false && "opacity-60")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -484,9 +487,30 @@ function OutfitEditor({
           onSaved={(next) => onImagesChange({ imagePath: next?.imagePath, imageUrl: next?.imageUrl })}
         />
       </div>
-      <p className="mt-3 text-sm font-bold text-[var(--olive)]">منتجات النموذج المشمولة دائماً: روب + وشاح + قبعة</p>
+      <p className="mt-3 text-sm font-bold text-[var(--olive)]">منتجات النموذج المشمولة في هذا الزي</p>
+      <p className="mt-1 text-xs leading-6 text-[var(--muted)]">اختر من المنتجات المفعّلة في هذا النموذج فقط. لا يُنشئ الزي منتجات جديدة.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {enabledProducts.map((product) => {
+          const checked = selectedProducts.includes(product);
+          return (
+            <label key={product} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-4 py-2 text-sm font-bold">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled || (checked && selectedProducts.length <= 1)}
+                onChange={() => {
+                  const next = checked ? selectedProducts.filter((id) => id !== product) : [...selectedProducts, product];
+                  if (!next.length) return;
+                  onChange({ productOrder: next });
+                }}
+              />
+              {CORE_PRODUCT_LABELS[product]}
+            </label>
+          );
+        })}
+      </div>
       <ol className="mt-2 grid gap-2">
-        {(outfit.productOrder?.length ? outfit.productOrder : [...CORE_PRODUCT_IDS]).map((productId, index, list) => (
+        {selectedProducts.map((productId, index, list) => (
           <li key={productId} className="grid gap-2 rounded-xl bg-white/80 p-2">
             <div className="flex items-center gap-2 text-sm font-bold">
               <span className="flex-1 text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[productId]}</span>

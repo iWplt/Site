@@ -3,6 +3,7 @@ import test from "node:test";
 import { defaultWarkaFormDefinition, fieldIsVisible } from "./form-definition.ts";
 import {
   applyOutfitArchitecture,
+  formEnabledCoreProducts,
   isSingleItemBooking,
   outfitProductDisplayImage,
   productIsSelected,
@@ -181,7 +182,7 @@ test("architecture maps outfit images onto the student outfit field", () => {
   assert.equal(field?.options?.find((option) => option.id === "royal")?.imageUrl, "/warka/royal.webp");
 });
 
-test("sanitize restores missing full-outfit cores without dropping stored outfit data", () => {
+test("sanitize keeps explicit outfit membership and does not auto-add cores", () => {
   const config = sanitizeOutfitConfig({
     fullOutfits: [
       {
@@ -196,7 +197,7 @@ test("sanitize restores missing full-outfit cores without dropping stored outfit
     singleItemProducts: ["sash"],
     productOrder: ["cap"]
   });
-  assert.deepEqual(config.fullOutfits[0]?.productOrder, ["robe", "sash", "cap"]);
+  assert.deepEqual(config.fullOutfits[0]?.productOrder, ["robe"]);
   assert.equal(config.fullOutfits[0]?.imagePath, "form/outfits/broken/cover/reference.webp");
   assert.deepEqual(config.productOrder, ["cap", "robe", "sash"]);
   assert.deepEqual(config.singleItemProducts, ["sash"]);
@@ -294,4 +295,52 @@ test("outfit product images appear only for the selected full outfit", () => {
   const single = resolveOutfitAnswers(definition, { booking_type: "single_pieces", selected_products: ["sash"] });
   assert.equal(outfitProductDisplayImage(resolveSelectedOutfit(definition, full), "sash"), "/uploads/royal-sash.webp");
   assert.equal(outfitProductDisplayImage(resolveSelectedOutfit(definition, single), "sash"), undefined);
+});
+
+function withDisabledProduct(definition: FormDefinition, productKey: string): FormDefinition {
+  return {
+    ...definition,
+    sections: definition.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) =>
+        field.key === productKey ? { ...field, options: field.options?.map((option) => ({ ...option, enabled: false })) } : field
+      )
+    }))
+  };
+}
+
+test("disabled form products are not selectable inside an outfit", () => {
+  const source: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [{ id: "royal", name: "زي ملكي", enabled: true, productOrder: ["robe", "sash", "cap"] }],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(withDisabledProduct(source, "cap_type"));
+  assert.deepEqual(formEnabledCoreProducts(live), ["robe", "sash"]);
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, ["robe", "sash"]);
+  assert.deepEqual(live.outfitConfig?.singleItemProducts, ["robe", "sash"]);
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "royal", selected_products: ["robe", "sash", "cap"] });
+  assert.deepEqual(answers.selected_products, ["robe", "sash"]);
+  const single = resolveOutfitAnswers(live, { booking_type: "single_pieces", selected_products: ["cap"] });
+  assert.deepEqual(single.selected_products, []);
+});
+
+test("full outfit subset stays explicit when all form products remain enabled", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [{ id: "robe-only", name: "روب فقط", enabled: true, productOrder: ["robe"] }],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, ["robe"]);
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "robe-only" });
+  assert.deepEqual(answers.selected_products, ["robe"]);
 });
