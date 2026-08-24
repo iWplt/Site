@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { duplicateFormAction, setFormStatusAction, archiveFormAction } from "@/app/actions";
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
-import { BatchUniformForm } from "@/components/batch-uniform-form";
+import { BatchFormRelationshipCard } from "@/components/batch-form-relationship";
 import { BookingWorkspaceNav, formWorkspaceItems } from "@/components/booking-workspace-nav";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { FormCopyPanel } from "@/components/form-copy-panel";
@@ -15,7 +15,7 @@ import { FORM_TABS, resolveFormTab, type FormTabId } from "@/lib/form-tabs";
 import { FormUploadSettings } from "@/components/form-upload-settings";
 import { Badge, Button, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getAdminForm, getBatch, getFixedOptions, listFormSummaries } from "@/lib/data";
+import { getAdminForm, getBatch, listFormSummaries } from "@/lib/data";
 import { uploadFieldsFromDefinition } from "@/lib/form-summary";
 import { formStatusLabels } from "@/lib/labels";
 import { getPublicAppUrl, requestOrigin } from "@/lib/public-url";
@@ -59,7 +59,6 @@ export default async function FormManagePage({
     }
   }
 
-  const uniform = tab === "booking" && form.batch_id ? await getFixedOptions(user, form.id) : {};
   const otherForms = canManage && tab === "publish" ? await listFormSummaries(user) : [];
 
   return (
@@ -130,7 +129,14 @@ export default async function FormManagePage({
                   <Meta label="الممثل" value={batch.representative_name ?? "غير معيّن"} />
                 </div>
               </Card>
-              {canManage ? <BatchUniformForm formId={form.id} definition={form.definition} value={uniform} /> : null}
+              <BatchFormRelationshipCard
+                formId={form.id}
+                formName={form.name}
+                formSlug={form.slug}
+                batchId={batch.id}
+                batchName={batch.name}
+                definition={form.definition}
+              />
             </div>
           ) : null}
           <details className="warka-card rounded-[1.5rem] p-4 sm:p-5">

@@ -2617,28 +2617,19 @@ async function sbLoadFixedOptions(
   formId: string,
   studentId?: string | null
 ): Promise<UniformSelectionMap> {
-  const { data: formRows, error: formError } = await admin
+  // Form-level (batch) locks are intentionally ignored so Catalog → Form → Outfit
+  // remains the student-facing source of truth. Only per-student locks apply.
+  const map: UniformSelectionMap = {};
+  if (!studentId) return map;
+
+  const { data: studentRows, error: studentError } = await admin
     .from("fixed_option_config")
     .select("field_key,option_value")
     .eq("form_id", formId)
-    .is("student_id", null);
-  if (formError) throw new Error(pgErrorMessage(formError, "تعذر تحميل إعدادات الزي الموحد."));
-
-  const map: UniformSelectionMap = {};
-  for (const row of formRows ?? []) {
+    .eq("student_id", studentId);
+  if (studentError) throw new Error(pgErrorMessage(studentError, "تعذر تحميل إعدادات زي الطالب."));
+  for (const row of studentRows ?? []) {
     map[row.field_key as keyof UniformSelectionMap] = row.option_value;
-  }
-
-  if (studentId) {
-    const { data: studentRows, error: studentError } = await admin
-      .from("fixed_option_config")
-      .select("field_key,option_value")
-      .eq("form_id", formId)
-      .eq("student_id", studentId);
-    if (studentError) throw new Error(pgErrorMessage(studentError, "تعذر تحميل إعدادات زي الطالب."));
-    for (const row of studentRows ?? []) {
-      map[row.field_key as keyof UniformSelectionMap] = row.option_value;
-    }
   }
   return map;
 }

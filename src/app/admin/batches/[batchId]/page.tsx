@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { archiveBatchAction } from "@/app/actions";
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
+import { BatchFormRelationshipCard } from "@/components/batch-form-relationship";
 import { BookingWorkspaceNav, batchWorkspaceItems } from "@/components/booking-workspace-nav";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getBatch, listStudents, listSubmissions } from "@/lib/data";
+import { getAdminForm, getBatch, listStudents, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
 
 export default async function BatchDetailPage({
@@ -19,8 +20,13 @@ export default async function BatchDetailPage({
   const { created } = await searchParams;
   const batch = await getBatch(user, batchId);
   if (!batch) notFound();
-  const [students, orders] = await Promise.all([listStudents(user, { batchId }), listSubmissions(user, { batchId })]);
+  const [students, orders, linkedForm] = await Promise.all([
+    listStudents(user, { batchId }),
+    listSubmissions(user, { batchId }),
+    batch.form ? getAdminForm(user, batch.form.id, { resolveImages: false }) : Promise.resolve(null)
+  ]);
   const formHref = batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms";
+  const formDefinition = linkedForm?.definition ?? batch.form?.definition;
 
   return (
     <div className="grid gap-4 sm:gap-6">
@@ -145,6 +151,17 @@ export default async function BatchDetailPage({
           </div>
         </Card>
       </div>
+
+      {batch.form && formDefinition ? (
+        <BatchFormRelationshipCard
+          formId={batch.form.id}
+          formName={batch.form.name}
+          formSlug={batch.form.slug}
+          batchId={batch.id}
+          batchName={batch.name}
+          definition={formDefinition}
+        />
+      ) : null}
     </div>
   );
 }

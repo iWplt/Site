@@ -50,7 +50,6 @@ import {
   sbLogout,
   sbRegenerateStudentCode,
   sbReopenSubmission,
-  sbSaveFixedOptions,
   sbSetAccessCodeStatus,
   sbSetFormStatus,
   sbSetBatchStatus,
@@ -490,18 +489,11 @@ export async function updateStudentAction(_state: { error?: string; success?: bo
   }
 }
 
-export async function saveBatchUniformAction(_state: { error?: string; success?: boolean } | undefined, formData: FormData) {
-  const user = await requireUser();
-  const formId = String(formData.get("form_id") ?? "").trim();
-  if (!formId) return { error: "النموذج غير موجود." };
-  try {
-    if (assertPersistenceAllowed() !== "supabase") return { error: "حفظ الزي الموحد متاح في وضع Supabase فقط." };
-    await sbSaveFixedOptions(user, { formId, studentId: null, map: parseUniformFormData(formData) });
-    revalidateAdmin();
-    return { success: true };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "تعذر حفظ الزي الموحد." };
-  }
+export async function saveBatchUniformAction() {
+  await requireUser(["OWNER"]);
+  return {
+    error: "تثبيت خيارات الزي على مستوى الدفعة لم يعد متاحاً. أدر المنتجات من تبويب المنتجات والأزياء من تبويب الأزياء في النموذج."
+  };
 }
 
 export async function createBatchAction(_state: { error?: string; success?: boolean; batchId?: string } | undefined, formData: FormData) {
@@ -530,7 +522,7 @@ export async function createBatchAction(_state: { error?: string; success?: bool
     description: description || undefined,
     representative_id: representativeId,
     status,
-    uniform: parseUniformFormData(formData)
+    uniform: {}
   };
 
   try {

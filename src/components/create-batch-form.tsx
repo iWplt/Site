@@ -2,16 +2,12 @@
 
 import { useActionState } from "react";
 import { createBatchAction } from "@/app/actions";
-import { UniformPicker } from "@/components/uniform-picker";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
-import type { FormDefinition } from "@/lib/types";
 
 export function CreateBatchForm({
-  representatives,
-  definition
+  representatives
 }: {
   representatives: Array<{ id: string; full_name: string }>;
-  definition: FormDefinition;
 }) {
   const [state, action, pending] = useActionState(createBatchAction, undefined);
 
@@ -68,13 +64,12 @@ export function CreateBatchForm({
             <option value="archived">مؤرشفة</option>
           </select>
         </div>
-        <div>
-          <h2 className="text-xl font-black text-[var(--olive-dark)]">الزي الموحد للدفعة</h2>
-          <p className="mb-3 mt-1 text-sm text-[var(--muted)]">
-            يثبّت خيارات من منتجات النموذج المفعّلة فقط. لا يضيف منتجات جديدة ولا يدير قائمة مستقلة.
+        <Card className="!rounded-[1.2rem] !bg-[#3f472d0d] !p-4">
+          <h2 className="text-lg font-black text-[var(--olive-dark)]">المنتجات والأزياء</h2>
+          <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
+            بعد إنشاء الدفعة يُنشأ نموذج مرتبط تلقائياً. أدر المنتجات من تبويب «المنتجات» والأزياء من تبويب «الأزياء» داخل ذلك النموذج — وليس من شاشة الدفعة.
           </p>
-          <UniformPicker definition={definition} />
-        </div>
+        </Card>
         {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}
         <Button disabled={pending} className="min-h-12">
           {pending ? "جاري الحفظ..." : "إنشاء الدفعة"}
