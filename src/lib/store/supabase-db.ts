@@ -30,8 +30,7 @@ import {
   enforceUniformAnswers,
   type UniformSelectionMap
 } from "@/lib/form-uniform";
-import { resolveOutfitAnswers, applyOutfitArchitecture, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
-import type { OutfitConfig } from "@/lib/types";
+import { resolveOutfitAnswers, applyOutfitArchitecture, sanitizeOutfitConfig, normalizeCatalogAssignment } from "@/lib/outfit-architecture";
 import { withCatalogDefinition } from "@/lib/store/catalog-store";
 import { toFormSummary } from "@/lib/form-summary";
 import type {
@@ -40,11 +39,13 @@ import type {
   BatchStats,
   BatchStatus,
   BookingFormRecord,
+  CatalogFormAssignment,
   FormDefinition,
   FormOption,
   FormStatus,
   FormType,
   OrderStatus,
+  OutfitConfig,
   Role,
   StudentWithState,
   SubmissionSummary,
@@ -1986,6 +1987,11 @@ async function fetchFormDefinitionOrThrow(admin: SupabaseAdminClient, formId: st
   return (data.definition as FormDefinition | null) ?? defaultWarkaFormDefinition;
 }
 
+export async function sbGetFormDefinition(formId: string): Promise<FormDefinition> {
+  const admin = createAdminClient();
+  return fetchFormDefinitionOrThrow(admin, formId);
+}
+
 function updateOptionsList(
   options: FormOption[],
   optionId: string,
@@ -2166,6 +2172,77 @@ export async function sbUpdateFormOutfitConfig(formId: string, config: OutfitCon
   const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
   if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ إعدادات الزي."));
   await sbAudit(admin, "FORM_OUTFIT_CONFIG_UPDATED", "booking_form", formId);
+}
+
+export async function sbReplaceFormDefinition(formId: string, definition: FormDefinition) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const { error } = await admin.from("booking_forms").update({ definition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ إعدادات النموذج."));
+  await sbAudit(admin, "FORM_DEFINITION_REPLACED", "booking_form", formId);
+}
+
+export async function sbPatchFormCatalogAssignment(formId: string, productId: string, assignment: CatalogFormAssignment) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const nextDefinition: FormDefinition = {
+    ...definition,
+    outfitConfig: {
+      ...config,
+      catalogAssignments: {
+        ...config.catalogAssignments,
+        [productId]: normalizeCatalogAssignment(assignment)
+      }
+    }
+  };
+  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ ربط المنتج بالنموذج."));
+  await sbAudit(admin, "FORM_CATALOG_ASSIGNMENT_UPDATED", "booking_form", formId, undefined, { productId });
+}
+
+export async function sbAddFormOption(
+  formId: string,
+  fieldKey: string,
+  input: { label: string; value?: string; description?: string }
+): Promise<FormOption> {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const label = input.label.trim();
+  if (!label) throw new Error("اسم الموديل مطلوب.");
+  const value = (input.value?.trim() || safeSlug(label) || `opt-${randomUUID().slice(0, 8)}`).slice(0, 80);
+  const option: FormOption = {
+    id: `opt-${randomUUID()}`,
+    label,
+    value,
+    description: input.description?.trim() || undefined,
+    enabled: true
+  };
+
+  let found = false;
+  const nextDefinition: FormDefinition = {
+    ...definition,
+    sections: definition.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        if (field.key !== fieldKey) return field;
+        found = true;
+        const existing = field.options ?? [];
+        if (existing.some((entry) => entry.value === option.value)) {
+          throw new Error("هذا الموديل موجود مسبقاً.");
+        }
+        return { ...field, options: [...existing, option], showOptionImages: field.showOptionImages ?? field.type === "image_choice" };
+      })
+    }))
+  };
+  if (!found) throw new Error("حقل الموديل غير موجود في هذا النموذج.");
+
+  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر إضافة الموديل."));
+  await sbAudit(admin, "FORM_OPTION_ADDED", "booking_form", formId, undefined, { fieldKey, optionId: option.id });
+  return option;
 }
 
 export async function sbReorderFormOptions(formId: string, fieldKey: string, orderedIds: string[]) {

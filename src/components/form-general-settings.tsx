@@ -23,11 +23,11 @@ export function FormGeneralSettings({ form }: { form: BookingFormRecord }) {
         <input type="hidden" name="form_id" value={form.id} />
         <div>
           <FieldLabel required>اسم النموذج</FieldLabel>
-          <TextInput name="name" required defaultValue={form.name} className="min-h-12" />
+          <TextInput name="name" required defaultValue={form.name} />
         </div>
         <div>
           <FieldLabel>الرابط العام</FieldLabel>
-          <TextInput readOnly value={`/f/${form.slug}`} className="ltr min-h-12 bg-white/70" />
+          <TextInput readOnly value={`/f/${form.slug}`} className="ltr bg-white/70" />
           <p className="mt-2 text-xs font-bold text-[var(--muted)]">الرابط العام ثابت حتى لا تتأثر حجوزات الطلاب الحالية.</p>
         </div>
         <div>
@@ -51,16 +51,16 @@ export function FormGeneralSettings({ form }: { form: BookingFormRecord }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel>يفتح في</FieldLabel>
-            <TextInput type="datetime-local" name="opening_date" defaultValue={toLocalInput(form.opening_date)} className="ltr min-h-12" />
+            <TextInput type="datetime-local" name="opening_date" defaultValue={toLocalInput(form.opening_date)} className="ltr" />
           </div>
           <div>
             <FieldLabel>يغلق في</FieldLabel>
-            <TextInput type="datetime-local" name="closing_date" defaultValue={toLocalInput(form.closing_date)} className="ltr min-h-12" />
+            <TextInput type="datetime-local" name="closing_date" defaultValue={toLocalInput(form.closing_date)} className="ltr" />
           </div>
         </div>
         {state?.error ? <p className="rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{state.error}</p> : null}
         {state?.success ? <p className="rounded-2xl bg-[#386a3d12] p-3 text-sm font-bold text-[var(--success)]">{state.success}</p> : null}
-        <Button disabled={pending} className="min-h-12">
+        <Button disabled={pending}>
           {pending ? "جاري الحفظ..." : "حفظ الإعدادات"}
         </Button>
       </form>

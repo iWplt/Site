@@ -5,6 +5,7 @@ import type { AppUser } from "@/lib/auth";
 import {
   DEFAULT_PRODUCT_CATEGORIES,
   filterAvailableProducts,
+  isProductAvailable,
   mergeCatalogIntoDefinition,
   type CatalogAudience
 } from "@/lib/product-catalog";
@@ -298,6 +299,56 @@ export async function updateCatalogProduct(user: AppUser, productId: string, inp
     product.availability = normalizeAvailability(productId, input.availability);
     return mapProduct(product, db.product_categories, product.availability, product.image_path ?? undefined);
   });
+}
+
+export async function attachProductToForm(productId: string, audience: CatalogAudience): Promise<CatalogProduct> {
+  const products = await listCatalogProducts({ resolveImages: false });
+  const product = products.find((entry) => entry.id === productId && !entry.archived);
+  if (!product) throw new Error("المنتج غير موجود.");
+
+  if (!product.active) {
+    await setCatalogProductActive(productId, true);
+  }
+
+  if (isProductAvailable(product.availability, audience)) {
+    const refreshed = await listCatalogProducts({ resolveImages: false });
+    return refreshed.find((entry) => entry.id === productId)!;
+  }
+
+  const row: ProductAvailability = {
+    id: randomUUID(),
+    product_id: productId,
+    scope: "forms",
+    batch_id: null,
+    form_id: audience.formId
+  };
+
+  if (getPersistenceMode() === "supabase") {
+    requireSupabaseSecretsForWrites();
+    const admin = createAdminClient();
+    const { error } = await admin.from("product_availability").insert({
+      product_id: productId,
+      scope: "forms",
+      batch_id: null,
+      form_id: audience.formId
+    });
+    if (error && !/duplicate|unique/i.test(error.message)) throw new Error(error.message);
+  } else {
+    mutateDb((db) => {
+      ensureLocalCatalog(db);
+      const local = db.products.find((entry) => entry.id === productId);
+      if (!local) throw new Error("المنتج غير موجود.");
+      const exists = local.availability.some((entry) => entry.scope === "forms" && entry.form_id === audience.formId);
+      if (!exists) local.availability.push(row);
+      local.active = true;
+      local.updated_at = now();
+    });
+  }
+
+  const refreshed = await listCatalogProducts({ resolveImages: false });
+  const attached = refreshed.find((entry) => entry.id === productId);
+  if (!attached) throw new Error("المنتج غير موجود.");
+  return attached;
 }
 
 export async function setCatalogProductActive(productId: string, active: boolean) {

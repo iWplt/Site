@@ -24,8 +24,8 @@ export default async function FormsPage() {
   return (
     <div className="grid min-w-0 gap-4 sm:gap-6">
       <div>
-        <p className="text-sm font-bold text-[var(--gold)]">إدارة الحجوزات والمنتجات</p>
-        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">النماذج والزي</h1>
+        <p className="text-sm font-bold text-[var(--gold)]">النماذج والمنتجات</p>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">النماذج</h1>
         <p className="mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)]">
           افتح النموذج لإدارة الحقول، الرفع، المنتجات، الزي الكامل، والحجز المفرد. الأرشفة تخفي النموذج دون حذف الطلبات السابقة.
         </p>
@@ -34,8 +34,9 @@ export default async function FormsPage() {
         <BookingWorkspaceNav
           items={[
             { href: "/admin/batches", label: "الدفعات" },
-            { href: "/admin/forms", label: "النماذج والزي", current: true },
-            { href: "/admin/products", label: "المنتجات المتاحة" },
+            { href: "/admin/forms", label: "النماذج", current: true },
+            { href: "/admin/products", label: "المنتجات" },
+            { href: "/admin/products?view=models", label: "الموديلات" },
             { href: "/admin/settings", label: "الصلاحيات" }
           ]}
         />
@@ -70,7 +71,7 @@ export default async function FormsPage() {
             {archived.map((form) => (
               <div key={form.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/60 p-3">
                 <p className="font-black text-[var(--olive-dark)]">{form.name}</p>
-                <LinkButton href={`/admin/forms/${form.id}`} variant="secondary" className="min-h-10 px-4 py-2">
+                <LinkButton href={`/admin/forms/${form.id}`} variant="secondary" size="sm">
                   عرض
                 </LinkButton>
               </div>

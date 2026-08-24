@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { archiveProductAction, reorderProductAction, toggleProductActiveAction } from "@/app/actions";
-import { Badge, Button, Card } from "@/components/ui";
+import { Badge, Button, Card, LinkButton, Select, TextInput } from "@/components/ui";
 import { formatProductPrice } from "@/lib/product-catalog";
 import type { CatalogProduct, ProductCategory } from "@/lib/types";
 
@@ -37,25 +37,24 @@ export function ProductList({
   return (
     <div className="grid gap-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <input
+        <TextInput
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="بحث باسم المنتج"
-          className="min-h-12 w-full min-w-0 rounded-2xl border border-[var(--border)] bg-white px-4"
+          placeholder="ابحث عن منتج..."
         />
-        <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="min-h-12 rounded-2xl border border-[var(--border)] bg-white px-4">
+        <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
           <option value="">كل التصنيفات</option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name_ar}
             </option>
           ))}
-        </select>
-        <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} className="min-h-12 rounded-2xl border border-[var(--border)] bg-white px-4">
-          <option value="all">كل الحالات</option>
+        </Select>
+        <Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
+          <option value="all">الكل</option>
           <option value="active">نشط</option>
           <option value="hidden">مخفي</option>
-        </select>
+        </Select>
       </div>
       {visible.map((product) => (
         <Card key={product.id} className="min-w-0">
@@ -80,15 +79,15 @@ export function ProductList({
                 {formatProductPrice(product.price_iqd) ?? "بدون سعر"} · {availabilityLabel(product)} · ترتيب {product.sort_order}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <a href={`/admin/products?edit=${product.id}`} className="inline-flex min-h-11 items-center rounded-2xl border border-[var(--border)] px-4 text-sm font-bold text-[var(--olive)]">
+                <LinkButton href={`/admin/products?edit=${product.id}`} variant="secondary" size="sm">
                   تعديل
-                </a>
+                </LinkButton>
                 <form
                   action={async () => {
                     await toggleProductActiveAction(product.id, !product.active);
                   }}
                 >
-                  <Button type="submit" variant="secondary" className="min-h-11">
+                  <Button type="submit" variant="secondary" size="sm">
                     {product.active ? "إخفاء" : "تفعيل"}
                   </Button>
                 </form>
@@ -97,14 +96,14 @@ export function ProductList({
                     await archiveProductAction(product.id);
                   }}
                 >
-                  <Button type="submit" variant="ghost" className="min-h-11">
+                  <Button type="submit" variant="ghost" size="sm">
                     حذف
                   </Button>
                 </form>
                 <form action={reorderProductAction} className="flex min-w-0 items-center gap-2">
                   <input type="hidden" name="product_id" value={product.id} />
-                  <input name="sort_order" defaultValue={product.sort_order} className="h-11 w-20 rounded-2xl border border-[var(--border)] px-3 ltr" />
-                  <Button type="submit" variant="ghost" className="min-h-11">
+                  <input name="sort_order" defaultValue={product.sort_order} className="h-9 w-20 rounded-xl border border-[var(--border)] px-3 ltr" />
+                  <Button type="submit" variant="ghost" size="sm">
                     حفظ الترتيب
                   </Button>
                 </form>

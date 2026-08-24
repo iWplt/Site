@@ -12,7 +12,7 @@ export function CopyLinkButton({ value, label = "نسخ الرابط" }: { value
       <Button
         type="button"
         variant="secondary"
-        className="min-h-11 px-4 py-2"
+        size="sm"
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(value);
@@ -22,10 +22,8 @@ export function CopyLinkButton({ value, label = "نسخ الرابط" }: { value
           }
         }}
       >
-        <span className="inline-flex items-center gap-2">
-          <LinkIcon size={15} />
-          {label}
-        </span>
+        <LinkIcon size={15} aria-hidden />
+        {label}
       </Button>
       {message ? <span className="text-xs font-bold text-[var(--olive)]">{message}</span> : null}
     </div>

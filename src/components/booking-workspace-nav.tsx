@@ -1,5 +1,4 @@
 import { LinkButton } from "@/components/ui";
-import { cn } from "@/lib/utils";
 
 type Item = {
   href: string;
@@ -9,7 +8,7 @@ type Item = {
 
 export function BookingWorkspaceNav({
   items,
-  title = "إدارة الحجوزات والمنتجات"
+  title = "النماذج والمنتجات"
 }: {
   items: Item[];
   title?: string;
@@ -24,7 +23,7 @@ export function BookingWorkspaceNav({
             href={item.href}
             prefetch
             variant={item.current ? "primary" : "secondary"}
-            className={cn("min-h-10 px-3 py-2 text-xs sm:text-sm")}
+            size="sm"
           >
             {item.label}
           </LinkButton>
@@ -39,8 +38,8 @@ export function batchWorkspaceItems(input: { batchId: string; formId?: string; c
   return [
     { href: `/admin/batches/${input.batchId}`, label: "الدفعة", current: input.current === "batch" },
     { href: formHref, label: "النموذج", current: input.current === "form" },
-    { href: input.formId ? `${formHref}?tab=outfits` : "/admin/forms", label: "الزي والمنتجات", current: input.current === "outfits" },
-    { href: "/admin/products", label: "المنتجات المتاحة", current: input.current === "products" },
+    { href: input.formId ? `${formHref}?tab=outfits` : "/admin/forms", label: "الأزياء", current: input.current === "outfits" },
+    { href: input.formId ? `${formHref}?tab=products` : "/admin/products", label: "المنتجات", current: input.current === "products" },
     { href: `/admin/batches/${input.batchId}/orders`, label: "الطلبات", current: input.current === "orders" }
   ];
 }
@@ -49,7 +48,7 @@ export function formWorkspaceItems(input: { formId: string; batchId?: string; cu
   return [
     { href: input.batchId ? `/admin/batches/${input.batchId}` : "/admin/batches", label: "الدفعة", current: input.current === "batch" },
     { href: `/admin/forms/${input.formId}`, label: "النموذج", current: input.current === "form" },
-    { href: `/admin/forms/${input.formId}?tab=outfits`, label: "الزي والمنتجات", current: input.current === "outfits" },
-    { href: "/admin/products", label: "المنتجات المتاحة", current: input.current === "products" }
+    { href: `/admin/forms/${input.formId}?tab=outfits`, label: "الأزياء", current: input.current === "outfits" },
+    { href: `/admin/forms/${input.formId}?tab=products`, label: "المنتجات", current: input.current === "products" }
   ];
 }

@@ -59,11 +59,14 @@ button {
 }
 
 img:not([data-nimg]),
-svg,
 video,
 canvas {
   max-width: 100%;
   height: auto;
+}
+
+svg {
+  max-width: 100%;
 }
 
 ::selection {

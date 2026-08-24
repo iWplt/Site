@@ -76,7 +76,7 @@ export default async function BatchDetailPage({
         </LinkButton>
         {batch.form ? (
           <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary">
-            الزي والمنتجات
+            الأزياء
           </LinkButton>
         ) : null}
         <LinkButton href="/admin/products" variant="secondary">المنتجات</LinkButton>
@@ -85,7 +85,7 @@ export default async function BatchDetailPage({
           <ArchiveConfirmButton
             label="أرشفة الدفعة"
             title={`أرشفة «${batch.name}»؟`}
-            warning="لن تُحذف الحجوزات أو الملفات السابقة. الدفعة ستختفي من القائمة النشطة، وسيُغلق نموذج الحجز العام. الطلبات القديمة تبقى قابلة للقراءة."
+            warning="سيتم أرشفة هذه الدفعة ولن تظهر ضمن الدفعات النشطة. الطلبات القديمة المرتبطة بها ستبقى محفوظة."
             action={archiveBatchAction}
             hiddenFields={{ batchId: batch.id }}
           />

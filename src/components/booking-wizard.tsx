@@ -11,7 +11,7 @@ import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
 import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
-import { formatProductPrice } from "@/lib/product-catalog";
+import { formatProductPrice, optionVisibleForBooking } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
 import type { BookingFormRecord, FormField } from "@/lib/types";
@@ -27,6 +27,7 @@ type Props = {
   studentName?: string;
   studentPhone?: string;
   studentAddress?: string;
+  previewMode?: boolean;
 };
 
 type SuccessState = {
@@ -37,7 +38,7 @@ type SuccessState = {
   batchName?: string;
 };
 
-export function BookingWizard({ form, studentName, studentPhone, studentAddress }: Props) {
+export function BookingWizard({ form, studentName, studentPhone, studentAddress, previewMode = false }: Props) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = { student_name: studentName };
@@ -70,7 +71,12 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
   }, [activeStep]);
 
   const visibleFields = useMemo(
-    () => sections[activeStep]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? [],
+    () =>
+      (sections[activeStep]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? []).filter((field) => {
+        if (!["radio", "select", "image_choice", "checkbox"].includes(field.type) || !field.options?.length) return true;
+        const visibleOptions = field.options.filter((option) => optionVisibleForBooking(option, answers.booking_type));
+        return visibleOptions.length > 0 || Boolean(field.required);
+      }),
     [answers, sections, activeStep]
   );
 
@@ -117,6 +123,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
   }
 
   function submit() {
+    if (previewMode) return;
     startTransition(async () => {
       const response = await fetch("/api/booking/submit", {
         method: "POST",
@@ -144,6 +151,11 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
 
   return (
     <div className="mx-auto max-w-3xl pb-32">
+      {previewMode ? (
+        <p className="mb-3 rounded-2xl bg-[#b59a631f] px-4 py-3 text-sm font-bold text-[#836528]">
+          معاينة إدارية — لا يُرسل طلب حقيقي.
+        </p>
+      ) : null}
       <Card className="mb-4 !rounded-[1.35rem] !p-4 sm:!p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -177,6 +189,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
           onBack={() => setStep(Math.max(0, sections.length - 1))}
           onSubmit={submit}
           error={errors.form}
+          previewMode={previewMode}
         />
       ) : (
         <Card className="!rounded-[1.35rem]">
@@ -191,6 +204,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
                 value={answers[field.key]}
                 files={files[field.key] ?? []}
                 error={errors[field.key]}
+                bookingType={answers.booking_type}
                 prioritizeImages={fieldIndex === 0}
                 onChange={(value) => setAnswer(field.key, value)}
                 onFiles={(next) => setFiles((current) => ({ ...current, [field.key]: next }))}
@@ -263,6 +277,7 @@ function FieldRenderer({
   value,
   files,
   error,
+  bookingType,
   prioritizeImages = false,
   onChange,
   onFiles
@@ -271,6 +286,7 @@ function FieldRenderer({
   value: unknown;
   files: UploadedFile[];
   error?: string;
+  bookingType?: unknown;
   prioritizeImages?: boolean;
   onChange: (value: unknown) => void;
   onFiles: (files: UploadedFile[]) => void;
@@ -318,7 +334,7 @@ function FieldRenderer({
       {field.type === "checkbox" && field.options ? (
         <div className="grid gap-3">
           {field.options
-            .filter((option) => option.enabled !== false)
+            .filter((option) => optionVisibleForBooking(option, bookingType))
             .map((option) => {
               const selected = asStringList(value).includes(option.value);
               return (
@@ -403,7 +419,7 @@ function FieldRenderer({
           )}
         >
           {field.options
-            .filter((option) => option.enabled !== false)
+            .filter((option) => optionVisibleForBooking(option, bookingType))
             .flatMap((option, optionIndex) => {
               const optionChildren = (option.children?.length ? option.children : [option]).filter((child) => child.enabled !== false);
               return optionChildren.map((child, childIndex) => {
@@ -510,7 +526,8 @@ function ReviewStep({
   pending,
   onBack,
   onSubmit,
-  error
+  error,
+  previewMode
 }: {
   form: BookingFormRecord;
   answers: Record<string, unknown>;
@@ -519,6 +536,7 @@ function ReviewStep({
   onBack: () => void;
   onSubmit: () => void;
   error?: string;
+  previewMode?: boolean;
 }) {
   const flatFiles = Object.entries(files).flatMap(([fieldKey, entries]) =>
     entries.map((file) => ({ ...file, fieldKey, field_key: fieldKey }))
@@ -534,11 +552,12 @@ function ReviewStep({
       </div>
       {error ? <p className="mt-4 rounded-2xl bg-[#9d2f2f12] p-3 text-sm font-bold text-[var(--danger)]">{error}</p> : null}
       <div className="mt-6 grid gap-3">
-        <Button className="min-h-12 w-full" variant="secondary" onClick={onBack}>
+        <Button className="min-h-12 w-full" size="lg" variant="secondary" onClick={onBack}>
           رجوع للتعديل
         </Button>
-        <Button className="min-h-12 w-full" disabled={pending} onClick={onSubmit}>
-          {pending ? <Loader2 className="inline animate-spin" size={16} /> : null} تأكيد وإرسال الطلب
+        <Button className="min-h-12 w-full" size="lg" disabled={pending || previewMode} onClick={onSubmit}>
+          {pending ? <Loader2 className="inline animate-spin" size={16} /> : null}
+          {previewMode ? "المعاينة لا ترسل طلباً" : pending ? "جاري الإرسال" : "تأكيد وإرسال الطلب"}
         </Button>
         <p className="text-center text-xs leading-6 text-[var(--muted)]">
           بإرسال الطلب، أؤكد صحة المعلومات وأوافق على استخدام البيانات والتصاميم المرفقة لغرض تجهيز الطلب.

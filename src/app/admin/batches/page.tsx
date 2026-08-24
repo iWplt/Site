@@ -19,7 +19,7 @@ export default async function BatchesPage() {
     <div className="grid gap-4 sm:gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-[var(--gold)]">إدارة الحجوزات والمنتجات</p>
+          <p className="text-sm font-bold text-[var(--gold)]">النماذج والمنتجات</p>
           <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الدفعات</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)]">
             من هنا تُدار الدفعة، نموذجها، الزي والمنتجات، ثم الطلبات. الأرشفة تخفي الدفعة دون حذف الحجوزات السابقة.
@@ -31,8 +31,9 @@ export default async function BatchesPage() {
         <BookingWorkspaceNav
           items={[
             { href: "/admin/batches", label: "الدفعات", current: true },
-            { href: "/admin/forms", label: "النماذج والزي" },
-            { href: "/admin/products", label: "المنتجات المتاحة" },
+            { href: "/admin/forms", label: "النماذج" },
+            { href: "/admin/products", label: "المنتجات" },
+            { href: "/admin/products?view=models", label: "الموديلات" },
             { href: "/admin/settings", label: "الصلاحيات" }
           ]}
         />
@@ -64,26 +65,26 @@ export default async function BatchesPage() {
             <div className="relative z-10 mt-4 flex flex-wrap gap-2">
               {batch.form ? (
                 <>
-                  <LinkButton href={`/admin/forms/${batch.form.id}`} variant="secondary" className="min-h-11 px-4 py-2">
+                  <LinkButton href={`/admin/forms/${batch.form.id}`} variant="secondary" size="sm">
                     النموذج
                   </LinkButton>
-                  <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary" className="min-h-11 px-4 py-2">
+                  <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary" size="sm">
                     الزي والمنتجات
                   </LinkButton>
                 </>
               ) : (
-                <LinkButton href="/admin/forms" variant="secondary" className="min-h-11 px-4 py-2">
+                <LinkButton href="/admin/forms" variant="secondary" size="sm">
                   النماذج
                 </LinkButton>
               )}
-              <LinkButton href="/admin/products" variant="secondary" className="min-h-11 px-4 py-2">
+              <LinkButton href="/admin/products" variant="secondary" size="sm">
                 المنتجات المتاحة
               </LinkButton>
               {canManage ? (
                 <ArchiveConfirmButton
                   label="أرشفة الدفعة"
                   title={`أرشفة «${batch.name}»؟`}
-                  warning="لن تُحذف الحجوزات أو الملفات السابقة. الدفعة ستختفي من القائمة النشطة، وسيُغلق نموذج الحجز العام. الطلبات القديمة تبقى قابلة للقراءة."
+                  warning="سيتم أرشفة هذه الدفعة ولن تظهر ضمن الدفعات النشطة. الطلبات القديمة المرتبطة بها ستبقى محفوظة."
                   action={archiveBatchAction}
                   hiddenFields={{ batchId: batch.id }}
                 />
@@ -110,7 +111,7 @@ export default async function BatchesPage() {
                   <p className="font-black text-[var(--olive-dark)]">{batch.name}</p>
                   <p className="text-xs font-bold text-[var(--muted)]">الطلبات القديمة تبقى ظاهرة من صفحة الطلبات</p>
                 </div>
-                <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary" className="min-h-10 px-4 py-2">
+                <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary" size="sm">
                   عرض
                 </LinkButton>
               </div>

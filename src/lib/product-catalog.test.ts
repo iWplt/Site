@@ -5,7 +5,8 @@ import {
   filterAvailableProducts,
   formatProductPrice,
   isProductAvailable,
-  mergeCatalogIntoDefinition
+  mergeCatalogIntoDefinition,
+  optionVisibleForBooking
 } from "./product-catalog.ts";
 import type { CatalogProduct, FormDefinition, ProductCategory } from "./types.ts";
 
@@ -114,4 +115,52 @@ test("empty catalog categories do not create wizard steps", () => {
   const merged = mergeCatalogIntoDefinition(definition, [], categories);
   assert.equal(merged.sections.some((section) => section.id.startsWith("catalog_")), false);
   assert.equal(merged.sections.find((section) => section.id === "robe")?.fields[0]?.options?.[0]?.value, "gulf");
+});
+
+test("form assignments hide, sort, and tag booking modes without duplicating catalog rows", () => {
+  const merged = mergeCatalogIntoDefinition(
+    {
+      ...definition,
+      outfitConfig: {
+        fullOutfits: [{ id: "mix", name: "زي مكس", enabled: true, productOrder: ["robe", "sash", "cap"] }],
+        singleItemEnabled: true,
+        singleItemProducts: ["robe", "sash", "cap"],
+        productOrder: ["robe", "sash", "cap"],
+        catalogAssignments: {
+          "prod-hidden": { hidden: true, bookingModes: ["full_set", "single_pieces"] },
+          "prod-single": { sortOrder: 1, bookingModes: ["single_pieces"] },
+          "prod-full": { sortOrder: 5, bookingModes: ["full_set"] }
+        }
+      }
+    },
+    [
+      product({ id: "prod-hidden", category_id: "cat-bouquet", name_ar: "مخفي عن الطلاب" }),
+      product({ id: "prod-full", category_id: "cat-bouquet", name_ar: "بوكيه كامل", sort_order: 1 }),
+      product({ id: "prod-single", category_id: "cat-bouquet", name_ar: "بوكيه مفرد", sort_order: 9 })
+    ],
+    categories
+  );
+  const options = merged.sections.find((section) => section.id === catalogFieldKey("bouquet"))?.fields[0]?.options ?? [];
+  assert.deepEqual(
+    options.map((option) => option.value),
+    ["prod-single", "prod-full"]
+  );
+  assert.deepEqual(options[0]?.bookingModes, ["single_pieces"]);
+  assert.deepEqual(options[1]?.bookingModes, ["full_set"]);
+});
+
+test("optionVisibleForBooking respects assignment modes and enabled flag", () => {
+  assert.equal(optionVisibleForBooking({ id: "a", label: "a", value: "a" }, "full_set"), true);
+  assert.equal(
+    optionVisibleForBooking({ id: "a", label: "a", value: "a", bookingModes: ["single_pieces"] }, "full_set"),
+    false
+  );
+  assert.equal(
+    optionVisibleForBooking({ id: "a", label: "a", value: "a", bookingModes: ["single_pieces"] }, "single_pieces"),
+    true
+  );
+  assert.equal(
+    optionVisibleForBooking({ id: "a", label: "a", value: "a", enabled: false, bookingModes: ["full_set"] }, "full_set"),
+    false
+  );
 });

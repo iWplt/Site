@@ -1,4 +1,6 @@
 import type {
+  BookingMode,
+  CatalogFormAssignment,
   ConditionalRule,
   CoreProductId,
   FormDefinition,
@@ -76,8 +78,30 @@ export function sanitizeOutfitConfig(raw?: OutfitConfig | null): OutfitConfig {
     fullOutfits: outfits.length ? outfits : fallback.fullOutfits,
     singleItemEnabled: raw?.singleItemEnabled !== false,
     singleItemProducts: singleItemProducts.length ? singleItemProducts : [...CORE_PRODUCT_IDS],
-    productOrder
+    productOrder,
+    catalogAssignments: sanitizeCatalogAssignments(raw?.catalogAssignments)
   };
+}
+
+export function normalizeCatalogAssignment(raw?: Partial<CatalogFormAssignment> | null): CatalogFormAssignment {
+  const modes = (raw?.bookingModes ?? ["full_set", "single_pieces"]).filter(
+    (mode): mode is BookingMode => mode === "full_set" || mode === "single_pieces"
+  );
+  return {
+    bookingModes: modes.length ? modes : ["full_set", "single_pieces"],
+    sortOrder: Number.isFinite(raw?.sortOrder) ? Number(raw?.sortOrder) : undefined,
+    hidden: Boolean(raw?.hidden)
+  };
+}
+
+function sanitizeCatalogAssignments(raw?: Record<string, CatalogFormAssignment | undefined>) {
+  if (!raw) return undefined;
+  const next: NonNullable<OutfitConfig["catalogAssignments"]> = {};
+  for (const [productId, assignment] of Object.entries(raw)) {
+    if (!productId.trim() || !assignment) continue;
+    next[productId] = normalizeCatalogAssignment(assignment);
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 function sanitizeFullOutfit(outfit: FullOutfit, index: number, fallbackOrder: CoreProductId[]): FullOutfit | null {

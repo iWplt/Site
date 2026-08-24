@@ -32,7 +32,7 @@ export function ArchiveConfirmButton({
 
   return (
     <>
-      <Button type="button" variant="danger" className="min-h-11 px-4 py-2" onClick={() => setOpen(true)}>
+      <Button type="button" variant="danger" size="sm" onClick={() => setOpen(true)}>
         {label}
       </Button>
       {open ? (

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fieldIsVisible, flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
 import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
+import { optionVisibleForBooking } from "@/lib/product-catalog";
 import { requiredUploadError } from "@/lib/required-upload";
 import type { FormDefinition } from "@/lib/types";
 
@@ -84,7 +85,7 @@ export function validateDynamicAnswers(
     if (["radio", "select", "image_choice"].includes(field.type) && value && field.options?.length) {
       const allowed = new Set(
         field.options
-          .filter((option) => option.enabled !== false)
+          .filter((option) => optionVisibleForBooking(option, resolved.booking_type))
           .flatMap((option) => [
             option.value,
             ...(option.children?.filter((child) => child.enabled !== false).map((child) => child.value) ?? [])

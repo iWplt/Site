@@ -1,38 +1,58 @@
 "use client";
 
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
 import { GripVertical } from "lucide-react";
-import { reorderFormOptionsAction, updateFormFieldMetaAction, updateFormOptionAction, updateFormOutfitConfigAction } from "@/app/actions";
-import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import {
-  CORE_PRODUCT_IDS,
-  CORE_PRODUCT_LABELS,
-  sanitizeOutfitConfig
-} from "@/lib/outfit-architecture";
-import type { CoreProductId, FormDefinition, FormField, FormOption, FullOutfit, OutfitConfig } from "@/lib/types";
+  addFormOptionAction,
+  reorderFormOptionsAction,
+  updateFormFieldMetaAction,
+  updateFormOptionAction,
+  updateFormOutfitConfigAction
+} from "@/app/actions";
+import { Button, Card, FieldLabel, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
+import { FormProductAssignModal } from "@/components/form-product-assign-modal";
+import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { OUTFIT_PRESETS, PRODUCT_MODEL_KEYS } from "@/lib/form-config";
+import { CATALOG_LEGACY_FIELD_MAP, type CatalogAudience } from "@/lib/product-catalog";
+import type {
+  CatalogProduct,
+  CoreProductId,
+  FormDefinition,
+  FormField,
+  FormOption,
+  FullOutfit,
+  OutfitConfig,
+  ProductCategory
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const PRODUCT_MODEL_KEYS: Record<CoreProductId, string> = {
-  robe: "robe_model",
-  sash: "sash_type",
-  cap: "cap_type"
-};
 
 export function FormOutfitWorkspace({
   formId,
   definition,
-  canManage
+  canManage,
+  products = [],
+  categories = [],
+  audience,
+  focus = "outfits"
 }: {
   formId: string;
   definition: FormDefinition;
   canManage: boolean;
+  products?: CatalogProduct[];
+  categories?: ProductCategory[];
+  audience?: CatalogAudience;
+  focus?: "outfits" | "customizations";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [config, setConfig] = useState<OutfitConfig>(() => sanitizeOutfitConfig(definition.outfitConfig));
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<string>();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | CoreProductId>("all");
 
   const fieldsByKey = useMemo(() => {
     const map = new Map<string, FormField>();
@@ -42,13 +62,30 @@ export function FormOutfitWorkspace({
     return map;
   }, [definition.sections]);
 
-  function saveConfig(next: OutfitConfig) {
-    const sanitized = sanitizeOutfitConfig(next);
-    setConfig(sanitized);
+  function markConfig(next: OutfitConfig) {
+    setConfig(
+      sanitizeOutfitConfig({
+        ...next,
+        catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+      })
+    );
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function saveConfig() {
     if (!canManage) return;
     startTransition(async () => {
-      await updateFormOutfitConfigAction(formId, sanitized);
-      setMessage("تم حفظ إعدادات الزي والمنتجات.");
+      await updateFormOutfitConfigAction(
+        formId,
+        sanitizeOutfitConfig({
+          ...config,
+          catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+        })
+      );
+      setDirty(false);
+      setSaved(true);
+      setMessage("✓ تم الحفظ");
       router.refresh();
     });
   }
@@ -58,146 +95,192 @@ export function FormOutfitWorkspace({
     const next = [...config.productOrder];
     const [item] = next.splice(index, 1);
     next.splice(target, 0, item);
-    saveConfig({ ...config, productOrder: next });
+    markConfig({ ...config, productOrder: next });
   }
+
+  const visibleProducts = CORE_PRODUCT_IDS.filter((product) => filter === "all" || filter === product).filter((product) => {
+    if (!query.trim()) return true;
+    const field = fieldsByKey.get(PRODUCT_MODEL_KEYS[product]);
+    const hay = `${CORE_PRODUCT_LABELS[product]} ${(field?.options ?? []).map((option) => option.label).join(" ")}`;
+    return hay.includes(query.trim());
+  });
+
+  useEffect(() => {
+    if (!dirty) return;
+    function onLeave(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [dirty]);
 
   return (
     <div className="grid gap-4">
-      {message ? <p className="rounded-2xl bg-[#386a3d12] px-4 py-3 text-sm font-bold text-[var(--success)]">{message}</p> : null}
-
-      <Card>
-        <h2 className="text-2xl font-black text-[var(--olive-dark)]">ترتيب المنتجات في نموذج الطالب</h2>
-        <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-          اسحب أو استخدم الأسهم. قياسات الروب وكل تخصيص الروب تنتقل معه.
+      <div className="sticky top-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-[var(--paper)]/95 px-3 py-2 shadow-sm">
+        <p className="text-sm font-bold text-[var(--olive-dark)]">
+          {dirty ? "● توجد تغييرات غير محفوظة" : saved ? "✓ تم الحفظ" : "إعدادات الزي والمنتجات"}
         </p>
-        <ol className="mt-4 grid gap-2">
-          {config.productOrder.map((product, index) => (
-            <li
-              key={product}
-              draggable={canManage}
-              onDragStart={() => setDragIndex(index)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => {
-                if (dragIndex == null) return;
-                moveProduct(dragIndex, index);
-                setDragIndex(null);
-              }}
-              className={cn(
-                "flex items-center gap-3 rounded-[1.15rem] border border-[var(--border)] bg-white/70 px-3 py-3",
-                dragIndex === index && "ring-2 ring-[var(--olive)]"
-              )}
-            >
-              <GripVertical className="text-[var(--muted)]" size={18} />
-              <span className="flex-1 font-black text-[var(--olive-dark)]">
-                {index + 1}. {CORE_PRODUCT_LABELS[product]}
-              </span>
-              {canManage ? (
-                <div className="flex gap-1">
-                  <Button type="button" variant="secondary" className="min-h-9 px-3 py-1" disabled={pending || index === 0} onClick={() => moveProduct(index, index - 1)}>
-                    ↑
-                  </Button>
-                  <Button type="button" variant="secondary" className="min-h-9 px-3 py-1" disabled={pending || index === config.productOrder.length - 1} onClick={() => moveProduct(index, index + 1)}>
-                    ↓
-                  </Button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      </Card>
-
-      <Card>
-        <h2 className="text-2xl font-black text-[var(--olive-dark)]">الأزياء الكاملة</h2>
-        <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-          كل زي كامل يتضمن دائماً الروب والوشاح والقبعة. عطّل الزي بدلاً من حذفه حتى تبقى الحجوزات القديمة مقروءة.
-        </p>
-        <div className="mt-4 grid gap-4">
-          {config.fullOutfits.map((outfit, index) => (
-            <OutfitEditor
-              key={outfit.id}
-              outfit={outfit}
-              disabled={!canManage || pending}
-              onChange={(patch) => {
-                const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
-                saveConfig({ ...config, fullOutfits });
-              }}
-              onArchive={() => {
-                const enabledCount = config.fullOutfits.filter((entry) => entry.enabled !== false).length;
-                if (outfit.enabled !== false && enabledCount <= 1) {
-                  setMessage("يجب الإبقاء على زي كامل واحد على الأقل.");
-                  return;
-                }
-                const fullOutfits = config.fullOutfits.map((entry, entryIndex) =>
-                  entryIndex === index ? { ...entry, enabled: false } : entry
-                );
-                saveConfig({ ...config, fullOutfits });
-              }}
-            />
-          ))}
-        </div>
         {canManage ? (
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-4"
-            disabled={pending}
-            onClick={() =>
-              saveConfig({
-                ...config,
-                fullOutfits: [
-                  ...config.fullOutfits,
-                  {
-                    id: `outfit-${Date.now().toString(36)}`,
-                    name: "زي جديد",
-                    description: "روب + وشاح + قبعة",
-                    enabled: true,
-                    productOrder: [...config.productOrder]
-                  }
-                ]
-              })
-            }
-          >
-            إضافة زي كامل
+          <Button type="button" size="sm" disabled={pending || !dirty} onClick={saveConfig}>
+            حفظ التغييرات
           </Button>
         ) : null}
-      </Card>
+      </div>
+      {message ? <p className="text-sm font-bold text-[var(--success)]">{message}</p> : null}
 
-      <Card>
-        <h2 className="text-2xl font-black text-[var(--olive-dark)]">الحجز المفرد</h2>
-        <label className="mt-4 flex items-center gap-3 font-bold text-[var(--olive-dark)]">
-          <input
-            type="checkbox"
-            checked={config.singleItemEnabled}
-            disabled={!canManage || pending}
-            onChange={(event) => saveConfig({ ...config, singleItemEnabled: event.target.checked })}
-          />
-          السماح للطلاب بحجز قطع منفردة
-        </label>
-        <p className="mt-3 text-sm text-[var(--muted)]">المنتجات المسموح اختيارها عند الحجز المفرد:</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {CORE_PRODUCT_IDS.map((product) => {
-            const checked = config.singleItemProducts.includes(product);
-            return (
-              <label key={product} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-4 py-2 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={!canManage || pending || !config.singleItemEnabled}
-                  onChange={() => {
-                    const next = checked
-                      ? config.singleItemProducts.filter((id) => id !== product)
-                      : [...config.singleItemProducts, product];
-                    saveConfig({ ...config, singleItemProducts: next.length ? next : [product] });
+      {focus === "outfits" ? (
+        <>
+          <Card>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">ترتيب المنتجات في نموذج الطالب</h2>
+            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">اسحب أو استخدم الأسهم. قياسات الروب تنتقل معه.</p>
+            <ol className="mt-4 grid gap-2">
+              {config.productOrder.map((product, index) => (
+                <li
+                  key={product}
+                  draggable={canManage}
+                  onDragStart={() => setDragIndex(index)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (dragIndex == null) return;
+                    moveProduct(dragIndex, index);
+                    setDragIndex(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-[1.1rem] border border-[var(--border)] bg-white/70 px-3 py-2.5",
+                    dragIndex === index && "ring-2 ring-[var(--olive)]"
+                  )}
+                >
+                  <GripVertical className="text-[var(--muted)]" size={16} />
+                  <span className="flex-1 font-black text-[var(--olive-dark)]">
+                    {index + 1}. {CORE_PRODUCT_LABELS[product]}
+                  </span>
+                  {canManage ? (
+                    <div className="flex gap-1">
+                      <Button type="button" variant="secondary" size="icon" aria-label="أعلى" disabled={pending || index === 0} onClick={() => moveProduct(index, index - 1)}>
+                        ↑
+                      </Button>
+                      <Button type="button" variant="secondary" size="icon" aria-label="أسفل" disabled={pending || index === config.productOrder.length - 1} onClick={() => moveProduct(index, index + 1)}>
+                        ↓
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </Card>
+
+          <Card>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">الأزياء الكاملة</h2>
+            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">كل زي كامل يتضمن دائماً الروب والوشاح والقبعة.</p>
+            <div className="mt-4 grid gap-3">
+              {config.fullOutfits.map((outfit, index) => (
+                <OutfitEditor
+                  key={outfit.id}
+                  outfit={outfit}
+                  disabled={!canManage || pending}
+                  onChange={(patch) => {
+                    const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
+                    markConfig({ ...config, fullOutfits });
+                  }}
+                  onArchive={() => {
+                    const enabledCount = config.fullOutfits.filter((entry) => entry.enabled !== false).length;
+                    if (outfit.enabled !== false && enabledCount <= 1) {
+                      setMessage("يجب الإبقاء على زي كامل واحد على الأقل.");
+                      return;
+                    }
+                    markConfig({
+                      ...config,
+                      fullOutfits: config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, enabled: false } : entry))
+                    });
                   }}
                 />
-                {CORE_PRODUCT_LABELS[product]}
-              </label>
-            );
-          })}
-        </div>
-      </Card>
+              ))}
+            </div>
+            {canManage ? (
+              <div className="mt-4 grid gap-2">
+                <p className="text-sm font-bold text-[var(--olive-dark)]">+ إضافة زي</p>
+                <div className="flex flex-wrap gap-2">
+                  {OUTFIT_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.id}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() =>
+                        markConfig({
+                          ...config,
+                          fullOutfits: [
+                            ...config.fullOutfits,
+                            {
+                              id: `${preset.id}-${Date.now().toString(36)}`,
+                              name: preset.name,
+                              description: preset.description,
+                              enabled: true,
+                              productOrder: [...CORE_PRODUCT_IDS]
+                            }
+                          ]
+                        })
+                      }
+                    >
+                      {preset.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </Card>
 
-      {CORE_PRODUCT_IDS.map((product) => (
+          <Card>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">الحجز المفرد</h2>
+            <label className="mt-3 inline-flex items-center gap-2 font-bold text-[var(--olive-dark)]">
+              <input
+                type="checkbox"
+                checked={config.singleItemEnabled}
+                disabled={!canManage || pending}
+                onChange={(event) => markConfig({ ...config, singleItemEnabled: event.target.checked })}
+              />
+              السماح للطلاب بحجز قطع منفردة
+            </label>
+            <p className="mt-2 text-sm text-[var(--muted)]">المنتجات المسموح اختيارها عند الحجز المفرد:</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {CORE_PRODUCT_IDS.map((product) => {
+                const checked = config.singleItemProducts.includes(product);
+                return (
+                  <label key={product} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-4 py-2 text-sm font-bold">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!canManage || pending || !config.singleItemEnabled}
+                      onChange={() => {
+                        const next = checked
+                          ? config.singleItemProducts.filter((id) => id !== product)
+                          : [...config.singleItemProducts, product];
+                        markConfig({ ...config, singleItemProducts: next.length ? next : [product] });
+                      }}
+                    />
+                    {CORE_PRODUCT_LABELS[product]}
+                  </label>
+                );
+              })}
+            </div>
+          </Card>
+        </>
+      ) : null}
+
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن منتج..." />
+        <div className="flex flex-wrap gap-1">
+          {(["all", ...CORE_PRODUCT_IDS] as const).map((entry) => (
+            <Button key={entry} type="button" size="sm" variant={filter === entry ? "primary" : "secondary"} onClick={() => setFilter(entry)}>
+              {entry === "all" ? "الكل" : CORE_PRODUCT_LABELS[entry]}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {visibleProducts.map((product) => (
         <ProductConfigCard
           key={product}
           product={product}
@@ -206,6 +289,12 @@ export function FormOutfitWorkspace({
           canManage={canManage}
           pending={pending}
           formId={formId}
+          definition={definition}
+          products={products}
+          categories={categories}
+          audience={audience}
+          expandCustomizations={focus === "customizations"}
+          singleItemVisible={config.singleItemProducts.includes(product)}
           onRefresh={() => router.refresh()}
         />
       ))}
@@ -227,10 +316,10 @@ function OutfitEditor({
   return (
     <div className={cn("rounded-[1.2rem] border border-[var(--border)] bg-white/60 p-4", outfit.enabled === false && "opacity-60")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold text-[var(--gold)]">{outfit.enabled === false ? "معطّل" : "نشط"}</p>
+        <VisibilityBadge visible={outfit.enabled !== false} />
         <label className="inline-flex items-center gap-2 text-sm font-bold">
           <input type="checkbox" checked={outfit.enabled !== false} disabled={disabled} onChange={(event) => onChange({ enabled: event.target.checked })} />
-          ظاهر للطالب
+          تفعيل الزي
         </label>
       </div>
       <FieldLabel>اسم الزي</FieldLabel>
@@ -239,10 +328,51 @@ function OutfitEditor({
         <FieldLabel>الوصف</FieldLabel>
         <TextArea defaultValue={outfit.description ?? ""} disabled={disabled} onBlur={(event) => onChange({ description: event.target.value })} />
       </div>
-      <p className="mt-3 text-sm font-bold text-[var(--olive)]">المنتجات: روب + وشاح + قبعة</p>
+      <p className="mt-3 text-sm font-bold text-[var(--olive)]">المنتجات المشمولة دائماً: روب + وشاح + قبعة</p>
+      <ol className="mt-2 grid gap-1">
+        {(outfit.productOrder?.length ? outfit.productOrder : [...CORE_PRODUCT_IDS]).map((productId, index, list) => (
+          <li key={productId} className="flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-bold">
+            <span className="flex-1 text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[productId]}</span>
+            {!disabled ? (
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  aria-label="أعلى"
+                  disabled={index === 0}
+                  onClick={() => {
+                    const next = [...list];
+                    const [item] = next.splice(index, 1);
+                    next.splice(index - 1, 0, item);
+                    onChange({ productOrder: next });
+                  }}
+                >
+                  ↑
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  aria-label="أسفل"
+                  disabled={index === list.length - 1}
+                  onClick={() => {
+                    const next = [...list];
+                    const [item] = next.splice(index, 1);
+                    next.splice(index + 1, 0, item);
+                    onChange({ productOrder: next });
+                  }}
+                >
+                  ↓
+                </Button>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ol>
       {!disabled ? (
-        <Button type="button" variant="ghost" className="mt-2 px-0" onClick={onArchive}>
-          أرشفة هذا الزي
+        <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={onArchive}>
+          إخفاء هذا الزي
         </Button>
       ) : null}
     </div>
@@ -256,6 +386,12 @@ function ProductConfigCard({
   canManage,
   pending,
   formId,
+  definition,
+  products,
+  categories,
+  audience,
+  expandCustomizations,
+  singleItemVisible,
   onRefresh
 }: {
   product: CoreProductId;
@@ -264,21 +400,39 @@ function ProductConfigCard({
   canManage: boolean;
   pending: boolean;
   formId: string;
+  definition: FormDefinition;
+  products: CatalogProduct[];
+  categories: ProductCategory[];
+  audience?: CatalogAudience;
+  expandCustomizations: boolean;
+  singleItemVisible: boolean;
   onRefresh: () => void;
 }) {
+  const [open, setOpen] = useState(expandCustomizations);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [modelName, setModelName] = useState("");
+  const [modelMessage, setModelMessage] = useState<string>();
   const [dragId, setDragId] = useState<string | null>(null);
   const options = field?.options ?? [];
+  const visibleModels = options.filter((option) => option.enabled !== false);
+  const customizations = extraFields.filter((entry) => entry.key !== PRODUCT_MODEL_KEYS[product] && entry.type !== "info");
+  const category = categories.find((entry) => CATALOG_LEGACY_FIELD_MAP[entry.slug]?.fieldKey === PRODUCT_MODEL_KEYS[product]);
+  const visible = visibleModels.length > 0;
+
+  function startSafe(fn: () => Promise<void>) {
+    void fn();
+  }
 
   function persistOrder(next: FormOption[]) {
     if (!field || !canManage) return;
     startSafe(async () => {
-      await reorderFormOptionsAction(formId, field.key, next.map((option) => option.id));
+      await reorderFormOptionsAction(
+        formId,
+        field.key,
+        next.map((option) => option.id)
+      );
       onRefresh();
     });
-  }
-
-  function startSafe(fn: () => Promise<void>) {
-    void fn();
   }
 
   function moveOption(index: number, target: number) {
@@ -289,91 +443,189 @@ function ProductConfigCard({
     persistOrder(next);
   }
 
+  async function setAllModels(enabled: boolean) {
+    if (!field || !canManage) return;
+    for (const option of options) {
+      await updateFormOptionAction(formId, field.key, option.id, { enabled });
+    }
+    onRefresh();
+  }
+
   return (
     <Card>
-      <h2 className="text-2xl font-black text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[product]}</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[product]}</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <VisibilityBadge visible={visible} />
+            {singleItemVisible ? <span className="text-xs font-bold text-[var(--muted)]">مسموح في الحجز المفرد</span> : <span className="text-xs font-bold text-[var(--muted)]">غير مسموح في الحجز المفرد</span>}
+          </div>
+        </div>
+        {canManage ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setOpen((current) => !current)}>
+              تعديل
+            </Button>
+            <Button type="button" variant="secondary" size="sm" disabled={pending || !options.length} onClick={() => startSafe(() => setAllModels(!visible))}>
+              {visible ? "إخفاء" : "إظهار"}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
       {product === "robe" ? (
-        <p className="mt-2 rounded-2xl bg-[#3f472d0d] px-4 py-3 text-sm font-bold text-[var(--olive)]">
-          قياسات الروب عامة: الطول (سم) ومقاس اللبس تظهر تلقائياً كلما اختير الروب، في كل الدفعات والنماذج.
+        <p className="mt-3 rounded-2xl bg-[#3f472d0d] px-4 py-2.5 text-sm font-bold text-[var(--olive)]">
+          قياسات الروب عامة: الطول (سم) ومقاس اللبس تظهر تلقائياً كلما اختير الروب.
         </p>
       ) : null}
-      <h3 className="mt-5 font-black text-[var(--olive-dark)]">الموديلات</h3>
-      <div className="mt-3 grid gap-2">
-        {options.map((option, index) => (
-          <div
-            key={option.id}
-            draggable={canManage}
-            onDragStart={() => setDragId(option.id)}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={() => {
-              const from = options.findIndex((entry) => entry.id === dragId);
-              if (from < 0) return;
-              moveOption(from, index);
-              setDragId(null);
-            }}
-            className="flex flex-wrap items-center gap-3 rounded-[1.1rem] border border-[var(--border)] bg-white/70 px-3 py-3"
-          >
-            <GripVertical size={16} className="text-[var(--muted)]" />
-            <span className="min-w-0 flex-1 font-bold text-[var(--olive-dark)]">{option.label}</span>
-            {canManage ? (
-              <>
-                <label className="inline-flex items-center gap-2 text-xs font-bold">
-                  <input
-                    type="checkbox"
-                    defaultChecked={option.enabled !== false}
-                    disabled={pending}
-                    onChange={(event) => {
-                      startSafe(async () => {
-                        await updateFormOptionAction(formId, field!.key, option.id, { enabled: event.target.checked });
-                        onRefresh();
-                      });
-                    }}
-                  />
-                  ظاهر
-                </label>
-                <Button type="button" variant="secondary" className="min-h-9 px-3 py-1" disabled={index === 0} onClick={() => moveOption(index, index - 1)}>
-                  ↑
-                </Button>
-                <Button type="button" variant="secondary" className="min-h-9 px-3 py-1" disabled={index === options.length - 1} onClick={() => moveOption(index, index + 1)}>
-                  ↓
-                </Button>
-              </>
-            ) : (
-              <span className="text-xs font-bold text-[var(--muted)]">{option.enabled === false ? "مخفي" : "ظاهر"}</span>
-            )}
-          </div>
-        ))}
-        {!options.length ? <p className="text-sm font-bold text-[var(--muted)]">لا توجد موديلات مخزّنة في هذا النموذج بعد.</p> : null}
+
+      <div className="mt-4">
+        <h3 className="text-sm font-black text-[var(--olive-dark)]">الموديلات</h3>
+        <ul className="mt-2 grid gap-1 text-sm font-bold text-[var(--olive)]">
+          {visibleModels.map((option) => (
+            <li key={option.id}>- {option.label}</li>
+          ))}
+          {!visibleModels.length ? <li className="text-[var(--muted)]">لا توجد موديلات ظاهرة</li> : null}
+        </ul>
       </div>
-      <h3 className="mt-5 font-black text-[var(--olive-dark)]">التخصيص المرتبط بهذا المنتج</h3>
-      <ul className="mt-3 grid gap-2">
-        {extraFields.map((entry) => (
-          <li key={entry.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/60 px-4 py-3">
-            <div>
-              <p className="text-xs font-bold text-[var(--gold)]">{entry.key}</p>
-              <p className="font-bold text-[var(--olive-dark)]">{entry.label}</p>
-            </div>
-            {canManage && entry.type !== "info" ? (
-              <label className="inline-flex items-center gap-2 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  defaultChecked={Boolean(entry.required)}
-                  disabled={pending}
-                  onChange={(event) => {
-                    startSafe(async () => {
-                      await updateFormFieldMetaAction(formId, entry.key, { required: event.target.checked });
+
+      <div className="mt-4">
+        <h3 className="text-sm font-black text-[var(--olive-dark)]">التخصيصات</h3>
+        <ul className="mt-2 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
+          {customizations.map((entry) => (
+            <li key={entry.key}>
+              {entry.required ? "✓" : "○"} {entry.label}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {open ? (
+        <div className="mt-4 grid gap-3 border-t border-[var(--border)] pt-4">
+          <h3 className="font-black text-[var(--olive-dark)]">الموديلات</h3>
+          <div className="grid gap-2">
+            {options.map((option, index) => (
+              <div
+                key={option.id}
+                draggable={canManage}
+                onDragStart={() => setDragId(option.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  const from = options.findIndex((entry) => entry.id === dragId);
+                  if (from < 0) return;
+                  moveOption(from, index);
+                  setDragId(null);
+                }}
+                className="flex flex-wrap items-center gap-2 rounded-[1.1rem] border border-[var(--border)] bg-white/70 px-3 py-2.5"
+              >
+                <GripVertical size={16} className="text-[var(--muted)]" />
+                <span className="min-w-0 flex-1 font-bold text-[var(--olive-dark)]">{option.label}</span>
+                <VisibilityBadge visible={option.enabled !== false} />
+                {canManage ? (
+                  <>
+                    <label className="inline-flex items-center gap-2 text-xs font-bold">
+                      <input
+                        type="checkbox"
+                        defaultChecked={option.enabled !== false}
+                        disabled={pending}
+                        onChange={(event) => {
+                          startSafe(async () => {
+                            await updateFormOptionAction(formId, field!.key, option.id, { enabled: event.target.checked });
+                            onRefresh();
+                          });
+                        }}
+                      />
+                      ظاهر
+                    </label>
+                    <Button type="button" variant="secondary" size="icon" aria-label="أعلى" disabled={index === 0} onClick={() => moveOption(index, index - 1)}>
+                      ↑
+                    </Button>
+                    <Button type="button" variant="secondary" size="icon" aria-label="أسفل" disabled={index === options.length - 1} onClick={() => moveOption(index, index + 1)}>
+                      ↓
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          {canManage && field ? (
+            <div className="grid gap-2 rounded-2xl border border-dashed border-[var(--border)] p-3">
+              {audience && category ? (
+                <Button type="button" size="sm" onClick={() => setCatalogOpen(true)}>
+                  + إضافة منتج من الكتالوج
+                </Button>
+              ) : null}
+              <form
+                className="grid gap-2 sm:grid-cols-[1fr_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const label = modelName.trim();
+                  if (!label) return;
+                  startSafe(async () => {
+                    const result = await addFormOptionAction(formId, field.key, label);
+                    setModelMessage(result.error ?? "تمت إضافة الموديل.");
+                    if (!result.error) {
+                      setModelName("");
                       onRefresh();
-                    });
-                  }}
-                />
-                مطلوب
-              </label>
-            ) : (
-              <span className="text-xs font-bold text-[var(--muted)]">{entry.required ? "مطلوب" : "اختياري"}</span>
-            )}
-          </li>
-        ))}
-      </ul>
+                    }
+                  });
+                }}
+              >
+                <TextInput value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="اسم موديل جديد" />
+                <Button type="submit" variant="secondary" disabled={pending || !modelName.trim()}>
+                  + إضافة موديل
+                </Button>
+              </form>
+              {modelMessage ? <p className="text-sm font-bold text-[var(--olive)]">{modelMessage}</p> : null}
+            </div>
+          ) : null}
+
+          <h3 className="font-black text-[var(--olive-dark)]">التخصيص المرتبط بهذا المنتج</h3>
+          <ul className="grid gap-2">
+            {customizations.map((entry) => (
+              <li key={entry.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/60 px-4 py-3">
+                <div>
+                  <p className="text-xs font-bold text-[var(--gold)]">{entry.key}</p>
+                  <p className="font-bold text-[var(--olive-dark)]">{entry.label}</p>
+                </div>
+                {canManage ? (
+                  <label className="inline-flex items-center gap-2 text-sm font-bold">
+                    <input
+                      type="checkbox"
+                      defaultChecked={Boolean(entry.required)}
+                      disabled={pending}
+                      onChange={(event) => {
+                        startSafe(async () => {
+                          await updateFormFieldMetaAction(formId, entry.key, { required: event.target.checked });
+                          onRefresh();
+                        });
+                      }}
+                    />
+                    مطلوب
+                  </label>
+                ) : (
+                  <span className="text-xs font-bold text-[var(--muted)]">{entry.required ? "مطلوب" : "اختياري"}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {catalogOpen && audience && category ? (
+        <FormProductAssignModal
+          formId={formId}
+          products={products}
+          categories={categories}
+          definition={definition}
+          audience={audience}
+          lockedCategoryId={category.id}
+          onClose={() => {
+            setCatalogOpen(false);
+            onRefresh();
+          }}
+        />
+      ) : null}
     </Card>
   );
 }

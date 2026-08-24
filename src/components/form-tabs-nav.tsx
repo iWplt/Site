@@ -19,7 +19,7 @@ export function FormTabsNav({
     <div className="min-w-0">
       <label className="mb-2 block text-sm font-bold text-[var(--olive-dark)] sm:hidden">قسم الإدارة</label>
       <select
-        className="min-h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--paper)] px-4 font-bold text-[var(--olive-dark)] sm:hidden"
+        className="h-11 min-h-11 w-full rounded-2xl border border-[var(--border)] bg-[var(--paper)] px-4 font-bold text-[var(--olive-dark)] sm:hidden"
         value={active}
         onChange={(event) => router.push(`/admin/forms/${formId}?tab=${event.target.value}`)}
       >
@@ -37,7 +37,7 @@ export function FormTabsNav({
               href={`/admin/forms/${formId}?tab=${tab.id}`}
               prefetch
               className={cn(
-                "inline-flex min-h-11 shrink-0 items-center rounded-full px-4 text-sm font-bold",
+                "inline-flex h-10 min-h-10 shrink-0 items-center justify-center rounded-full px-4 text-sm font-bold",
                 tab.id === active
                   ? "bg-[var(--olive)] text-[var(--paper)]"
                   : "border border-[var(--border)] bg-[var(--paper)] text-[var(--olive)]"

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import {
   ClipboardList,
@@ -10,6 +10,7 @@ import {
   GraduationCap,
   History,
   Home,
+  Layers,
   LogOut,
   Menu,
   Package,
@@ -34,11 +35,12 @@ type NavGroup = { label: string; items: NavLink[] };
 const ownerNav: Array<NavLink | NavGroup> = [
   { href: "/admin", label: "لوحة التحكم", icon: Home },
   {
-    label: "إدارة الحجوزات والمنتجات",
+    label: "النماذج والمنتجات",
     items: [
       { href: "/admin/batches", label: "الدفعات", icon: GraduationCap },
-      { href: "/admin/forms", label: "النماذج والزي", icon: FileText },
-      { href: "/admin/products", label: "المنتجات المتاحة", icon: Package },
+      { href: "/admin/forms", label: "النماذج", icon: FileText },
+      { href: "/admin/products", label: "المنتجات", icon: Package },
+      { href: "/admin/products?view=models", label: "الموديلات", icon: Layers },
       { href: "/admin/settings", label: "الصلاحيات", icon: Settings }
     ]
   },
@@ -60,24 +62,29 @@ const repNav: Array<NavLink | NavGroup> = [
   { href: "/admin/pickup", label: "الاستلام", icon: ScanLine }
 ];
 
-function isActivePath(href: string, pathname: string) {
-  if (href === "/admin") return pathname === "/admin";
-  return pathname === href || pathname.startsWith(`${href}/`);
+function isActivePath(href: string, pathname: string, search: string) {
+  const [path, query] = href.split("?");
+  if (path === "/admin") return pathname === "/admin";
+  if (query?.includes("view=models")) return pathname === "/admin/products" && search.includes("view=models");
+  if (path === "/admin/products") return pathname === "/admin/products" && !search.includes("view=models");
+  return pathname === path || pathname.startsWith(`${path}/`);
 }
 
 function NavLinks({
   items,
   pathname,
+  search,
   onNavigate
 }: {
   items: NavLink[];
   pathname: string;
+  search: string;
   onNavigate: (href: string) => void;
 }) {
   return (
     <>
       {items.map((item) => {
-        const active = isActivePath(item.href, pathname);
+        const active = isActivePath(item.href, pathname, search);
         return (
           <Link
             key={item.href}
@@ -102,6 +109,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
   const nav = user.role === "OWNER" ? ownerNav : repNav;
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const search = useSearchParams().toString();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const navigating = Boolean(pendingHref && pendingHref !== pathname);
 
@@ -150,7 +158,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
           <nav className="mt-6 grid grid-cols-1 gap-2">
             {nav.map((entry) => {
               if ("items" in entry) {
-                const groupActive = entry.items.some((item) => isActivePath(item.href, pathname));
+                const groupActive = entry.items.some((item) => isActivePath(item.href, pathname, search));
                 return (
                   <div
                     key={entry.label}
@@ -161,6 +169,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
                       <NavLinks
                         items={entry.items}
                         pathname={pathname}
+                        search={search}
                         onNavigate={(href) => {
                           setOpen(false);
                           if (href !== pathname) setPendingHref(href);
@@ -175,6 +184,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
                   key={entry.href}
                   items={[entry]}
                   pathname={pathname}
+                  search={search}
                   onNavigate={(href) => {
                     setOpen(false);
                     if (href !== pathname) setPendingHref(href);

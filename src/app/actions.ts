@@ -26,7 +26,9 @@ import { answersWithSnapshot, buildOrderSnapshot } from "@/lib/order-snapshot";
 import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/lib/validation";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { mergeCatalogIntoDefinition, filterAvailableProducts } from "@/lib/product-catalog";
-import { applyOutfitArchitecture, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { applyOutfitArchitecture, normalizeCatalogAssignment, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { applyCopiedFormConfig, catalogProductIdsFromDefinition, type CopyFormSlices } from "@/lib/form-config";
+import { getAdminForm } from "@/lib/data";
 import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
 import { deleteOptionImage, storeOptionImage } from "@/lib/storage/uploads";
@@ -58,6 +60,10 @@ import {
   sbUpdateFormGeneral,
   sbUpdateFormOption,
   sbUpdateFormOutfitConfig,
+  sbPatchFormCatalogAssignment,
+  sbAddFormOption,
+  sbReplaceFormDefinition,
+  sbGetFormDefinition,
   sbReorderFormOptions,
   sbUpdateFormUploadSettings,
   sbUpdateOrderStatus,
@@ -72,7 +78,7 @@ import {
   clientRateBucket,
   guardAccessCodeAttempt
 } from "@/lib/access-code-rate-limit";
-import type { AccessCodeStatus, Batch, BatchStatus, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
+import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
@@ -1084,6 +1090,194 @@ export async function updateFormOutfitConfigAction(formId: string, raw: OutfitCo
     });
   }
   revalidateAdmin();
+}
+
+export async function saveFormCatalogProductAction(input: {
+  formId: string;
+  productId?: string;
+  create?: {
+    category_id: string;
+    name_ar: string;
+    name_en?: string;
+    description?: string;
+    price_iqd?: number | null;
+    sort_order?: number;
+  };
+  assignment?: CatalogFormAssignment;
+}): Promise<{ error?: string; productId?: string }> {
+  const user = await requireUser(["OWNER"]);
+  const form = await getAdminForm(user, input.formId);
+  if (!form) return { error: "النموذج غير موجود." };
+  const assignment = normalizeCatalogAssignment(input.assignment);
+  const audience = { formId: form.id, formType: form.type, batchId: form.batch_id };
+  try {
+    const { attachProductToForm, createCatalogProduct } = await import("@/lib/store/catalog-store");
+    let productId = input.productId?.trim();
+    if (!productId) {
+      const created = input.create;
+      if (!created?.name_ar?.trim() || !created.category_id) return { error: "اسم المنتج والتصنيف مطلوبان." };
+      const product = await createCatalogProduct(user, {
+        category_id: created.category_id,
+        name_ar: created.name_ar,
+        name_en: created.name_en,
+        description: created.description,
+        price_iqd: created.price_iqd,
+        active: true,
+        sort_order: created.sort_order ?? assignment.sortOrder ?? 0,
+        availability: [{ scope: "forms", form_id: form.id }]
+      });
+      productId = product.id;
+    } else {
+      await attachProductToForm(productId, audience);
+    }
+    await patchFormCatalogAssignment(form.id, productId, assignment);
+    revalidateAdmin();
+    revalidatePath(`/admin/forms/${form.id}`);
+    return { productId };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر حفظ المنتج في النموذج." };
+  }
+}
+
+export async function saveFormProductAssignmentAction(
+  formId: string,
+  productId: string,
+  assignment: CatalogFormAssignment
+): Promise<{ error?: string }> {
+  await requireUser(["OWNER"]);
+  try {
+    await patchFormCatalogAssignment(formId, productId, normalizeCatalogAssignment(assignment));
+    revalidateAdmin();
+    revalidatePath(`/admin/forms/${formId}`);
+    return {};
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر حفظ إعدادات المنتج." };
+  }
+}
+
+export async function addFormOptionAction(
+  formId: string,
+  fieldKey: string,
+  label: string
+): Promise<{ error?: string }> {
+  await requireUser(["OWNER"]);
+  const name = label.trim();
+  if (!name) return { error: "اسم الموديل مطلوب." };
+  try {
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbAddFormOption(formId, fieldKey, { label: name });
+    } else {
+      mutateDb((db) => {
+        const form = db.forms.find((entry) => entry.id === formId);
+        if (!form) throw new Error("النموذج غير موجود.");
+        const value = safeSlug(name) || `opt-${Date.now().toString(36)}`;
+        let found = false;
+        form.definition = {
+          ...form.definition,
+          sections: form.definition.sections.map((section) => ({
+            ...section,
+            fields: section.fields.map((field) => {
+              if (field.key !== fieldKey) return field;
+              found = true;
+              const existing = field.options ?? [];
+              if (existing.some((option) => option.value === value || option.label === name)) {
+                throw new Error("هذا الموديل موجود مسبقاً.");
+              }
+              return {
+                ...field,
+                options: [
+                  ...existing,
+                  { id: `opt-${randomUUID()}`, label: name, value, enabled: true }
+                ]
+              };
+            })
+          }))
+        };
+        if (!found) throw new Error("حقل الموديل غير موجود في هذا النموذج.");
+        audit(db, "FORM_OPTION_ADDED", "booking_form", formId, { label: "owner" }, { fieldKey });
+      });
+    }
+    revalidateAdmin();
+    revalidatePath(`/admin/forms/${formId}`);
+    return {};
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر إضافة الموديل." };
+  }
+}
+
+async function patchFormCatalogAssignment(formId: string, productId: string, assignment: CatalogFormAssignment) {
+  if (assertPersistenceAllowed() === "supabase") {
+    await sbPatchFormCatalogAssignment(formId, productId, assignment);
+    return;
+  }
+  mutateDb((db) => {
+    const form = db.forms.find((entry) => entry.id === formId);
+    if (!form) throw new Error("النموذج غير موجود.");
+    const config = sanitizeOutfitConfig(form.definition.outfitConfig);
+    form.definition = {
+      ...form.definition,
+      outfitConfig: {
+        ...config,
+        catalogAssignments: {
+          ...config.catalogAssignments,
+          [productId]: assignment
+        }
+      }
+    };
+    audit(db, "FORM_CATALOG_ASSIGNMENT_UPDATED", "booking_form", formId, { label: "owner" }, { productId });
+  });
+}
+
+export async function copyFormConfigurationAction(
+  targetFormId: string,
+  sourceFormId: string,
+  slices: CopyFormSlices
+): Promise<{ error?: string }> {
+  const user = await requireUser(["OWNER"]);
+  if (targetFormId === sourceFormId) return { error: "اختر نموذجاً مختلفاً للنسخ." };
+  const selected = Object.values(slices).some(Boolean);
+  if (!selected) return { error: "اختر عنصراً واحداً على الأقل للنسخ." };
+  try {
+    let sourceDef: FormDefinition;
+    let targetDef: FormDefinition;
+    if (assertPersistenceAllowed() === "supabase") {
+      sourceDef = await sbGetFormDefinition(sourceFormId);
+      targetDef = await sbGetFormDefinition(targetFormId);
+    } else {
+      const db = readDb();
+      const source = db.forms.find((entry) => entry.id === sourceFormId);
+      const target = db.forms.find((entry) => entry.id === targetFormId);
+      if (!source || !target) throw new Error("النموذج غير موجود.");
+      sourceDef = source.definition;
+      targetDef = target.definition;
+    }
+    const next = applyCopiedFormConfig(targetDef, sourceDef, slices);
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbReplaceFormDefinition(targetFormId, next);
+    } else {
+      mutateDb((db) => {
+        const form = db.forms.find((entry) => entry.id === targetFormId);
+        if (!form) throw new Error("النموذج غير موجود.");
+        form.definition = next;
+        audit(db, "FORM_CONFIG_COPIED", "booking_form", targetFormId, { label: "owner" }, { sourceFormId, slices });
+      });
+    }
+    if (slices.products) {
+      const { attachProductToForm } = await import("@/lib/store/catalog-store");
+      const target = await getAdminForm(user, targetFormId);
+      if (target) {
+        const audience = { formId: target.id, formType: target.type, batchId: target.batch_id };
+        for (const productId of catalogProductIdsFromDefinition(sourceDef)) {
+          await attachProductToForm(productId, audience).catch(() => undefined);
+        }
+      }
+    }
+    revalidateAdmin();
+    revalidatePath(`/admin/forms/${targetFormId}`);
+    return {};
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر نسخ الإعدادات." };
+  }
 }
 
 export async function reorderFormOptionsAction(formId: string, fieldKey: string, orderedIds: string[]) {

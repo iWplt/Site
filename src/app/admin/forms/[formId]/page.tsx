@@ -4,22 +4,23 @@ import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { BatchUniformForm } from "@/components/batch-uniform-form";
 import { BookingWorkspaceNav, formWorkspaceItems } from "@/components/booking-workspace-nav";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { FormCopyPanel } from "@/components/form-copy-panel";
+import { FormConfigWarnings } from "@/components/form-config-warnings";
 import { FormOutfitWorkspace } from "@/components/form-outfit-workspace";
 import { FormFieldsManager } from "@/components/form-fields-manager";
 import { FormGeneralSettings } from "@/components/form-general-settings";
 import { FormProductsPanel } from "@/components/form-products-panel";
 import { FormTabsNav } from "@/components/form-tabs-nav";
-import { FORM_TABS, type FormTabId } from "@/lib/form-tabs";
+import { FORM_TABS, resolveFormTab, type FormTabId } from "@/lib/form-tabs";
 import { FormUploadSettings } from "@/components/form-upload-settings";
 import { Badge, Button, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getAdminForm, getBatch, getFixedOptions } from "@/lib/data";
+import { getAdminForm, getBatch, getFixedOptions, listFormSummaries } from "@/lib/data";
 import { uploadFieldsFromDefinition } from "@/lib/form-summary";
 import { formStatusLabels } from "@/lib/labels";
 import { getPublicAppUrl, requestOrigin } from "@/lib/public-url";
-import { listCatalogProducts } from "@/lib/store/catalog-store";
-
-const TAB_IDS = new Set(FORM_TABS.map((tab) => tab.id));
+import { listCatalogProducts, listProductCategories } from "@/lib/store/catalog-store";
+import type { CatalogProduct, ProductCategory } from "@/lib/types";
 
 export default async function FormManagePage({
   params,
@@ -31,37 +32,40 @@ export default async function FormManagePage({
   const user = await requireUser();
   const { formId } = await params;
   const { tab: rawTab } = await searchParams;
-  const requested = TAB_IDS.has(rawTab as FormTabId) ? (rawTab as FormTabId) : "general";
+  const requested = resolveFormTab(rawTab);
 
   const form = await getAdminForm(user, formId, {
-    resolveImages: requested === "products" || requested === "batch"
+    resolveImages: requested === "products" || requested === "outfits" || requested === "customizations" || requested === "booking"
   });
   if (!form) notFound();
 
   const isBatch = form.type === "BATCH" && Boolean(form.batch_id);
-  const tabs = FORM_TABS.filter((tab) => (tab.id === "batch" ? isBatch : true));
-  const tab = requested === "batch" && !isBatch ? "general" : requested;
+  const tab: FormTabId = requested;
   const canManage = user.role === "OWNER";
   const origin = getPublicAppUrl(await requestOrigin());
   const publicPath = `/f/${form.slug}`;
   const publicUrl = `${origin}${publicPath}`;
+  const previewHref = `/admin/forms/${form.id}/preview`;
   const batch = form.batch_id ? await getBatch(user, form.batch_id) : null;
 
-  let products: Awaited<ReturnType<typeof listCatalogProducts>> = [];
-  if (tab === "products") {
+  let products: CatalogProduct[] = [];
+  let categories: ProductCategory[] = [];
+  if (tab === "products" || tab === "outfits" || tab === "customizations") {
     try {
-      products = await listCatalogProducts({ resolveImages: false });
+      [products, categories] = await Promise.all([listCatalogProducts({ resolveImages: false }), listProductCategories()]);
     } catch {
       products = [];
+      categories = [];
     }
   }
 
-  const uniform = tab === "batch" && form.batch_id ? await getFixedOptions(user, form.id) : {};
+  const uniform = tab === "booking" && form.batch_id ? await getFixedOptions(user, form.id) : {};
+  const otherForms = canManage && tab === "publish" ? await listFormSummaries(user) : [];
 
   return (
-    <div className="grid min-w-0 gap-4 sm:gap-6">
+    <div className="grid min-w-0 gap-4 pb-16">
       <div>
-        <LinkButton href="/admin/forms" variant="ghost" className="mb-3 px-0 py-2">
+        <LinkButton href="/admin/forms" variant="ghost" size="sm" className="mb-3 px-0">
           العودة إلى النماذج
         </LinkButton>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -84,80 +88,85 @@ export default async function FormManagePage({
         })}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Meta label="نوع النموذج" value={form.type === "INDIVIDUAL" ? "حجز فردي" : "دفعة"} />
-        <Meta label="الرابط" value={publicPath} ltr />
-        <Meta label="الدفعة" value={batch?.name ?? (form.type === "INDIVIDUAL" ? "طالب فردي" : "غير مرتبط")} />
-        <Meta
-          label="عدد الحقول"
-          value={String(form.definition.sections.reduce((count, section) => count + section.fields.length, 0))}
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <LinkButton href={publicPath} target="_blank" rel="noreferrer" variant="secondary" className="min-h-11 px-4 py-2">
-          فتح الرابط العام
-        </LinkButton>
-        <CopyLinkButton value={publicUrl} />
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-white/70 p-3">
+        <div className="flex flex-wrap gap-2">
+          <LinkButton href={previewHref} target="_blank" rel="noreferrer">
+            👁️ معاينة كطالب
+          </LinkButton>
+          <CopyLinkButton value={publicUrl} />
+        </div>
         {canManage ? (
-          <>
-            <form
-              action={async () => {
-                "use server";
-                await setFormStatusAction(form.id, form.status === "published" ? "closed" : "published");
-              }}
-            >
-              <Button type="submit" variant="secondary" className="min-h-11 px-4 py-2">
-                {form.status === "published" ? "إغلاق" : "تفعيل"}
-              </Button>
-            </form>
-            <form
-              action={async () => {
-                "use server";
-                await duplicateFormAction(form.id);
-              }}
-            >
-              <Button type="submit" variant="secondary" className="min-h-11 px-4 py-2">
-                نسخ النموذج
-              </Button>
-            </form>
-            {form.status !== "archived" ? (
-              <ArchiveConfirmButton
-                label="أرشفة النموذج"
-                title={`أرشفة «${form.name}»؟`}
-                warning="لن تُحذف الحجوزات أو الملفات أو لقطات الطلب السابقة. النموذج سيختفي من القائمة النشطة ويتوقف الحجز العام."
-                action={archiveFormAction}
-                hiddenFields={{ formId: form.id }}
-              />
-            ) : null}
-          </>
+          <form
+            action={async () => {
+              "use server";
+              await setFormStatusAction(form.id, form.status === "published" ? "closed" : "published");
+            }}
+          >
+            <Button type="submit" variant={form.status === "published" ? "secondary" : "primary"}>
+              {form.status === "published" ? "إغلاق النموذج" : "نشر النموذج"}
+            </Button>
+          </form>
         ) : null}
       </div>
 
-      <FormTabsNav formId={form.id} active={tab} tabs={tabs} />
+      <FormTabsNav formId={form.id} active={tab} tabs={[...FORM_TABS]} />
+      {tab !== "booking" ? <FormConfigWarnings definition={form.definition} /> : null}
 
-      {tab === "general" ? (
-        canManage ? (
-          <FormGeneralSettings form={form} />
-        ) : (
-          <Card>
-            <p className="font-bold text-[var(--muted)]">عرض فقط. إدارة النموذج متاحة للمالك.</p>
-          </Card>
-        )
+      {tab === "booking" ? (
+        <div className="grid gap-4">
+          {canManage ? (
+            <FormGeneralSettings form={form} />
+          ) : (
+            <Card>
+              <p className="font-bold text-[var(--muted)]">عرض فقط. إدارة النموذج متاحة للمالك.</p>
+            </Card>
+          )}
+          {isBatch && batch ? (
+            <div className="grid gap-4">
+              <Card>
+                <h2 className="text-xl font-black text-[var(--olive-dark)]">إعدادات الدفعة</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Meta label="الدفعة" value={batch.name} />
+                  <Meta label="الممثل" value={batch.representative_name ?? "غير معيّن"} />
+                </div>
+              </Card>
+              {canManage ? <BatchUniformForm formId={form.id} definition={form.definition} value={uniform} /> : null}
+            </div>
+          ) : null}
+          <details className="warka-card rounded-[1.5rem] p-4 sm:p-5">
+            <summary className="cursor-pointer font-black text-[var(--olive-dark)]">الحقول والأقسام المتقدمة</summary>
+            <div className="mt-4">
+              <FormFieldsManager formId={form.id} definition={form.definition} canManage={canManage} />
+            </div>
+          </details>
+        </div>
       ) : null}
 
-      {tab === "outfits" ? <FormOutfitWorkspace formId={form.id} definition={form.definition} canManage={canManage} /> : null}
+      {tab === "outfits" ? (
+        <FormOutfitWorkspace
+          formId={form.id}
+          definition={form.definition}
+          canManage={canManage}
+          products={products}
+          categories={categories}
+          audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
+          focus="outfits"
+        />
+      ) : null}
 
-      {tab === "fields" ? <FormFieldsManager formId={form.id} definition={form.definition} canManage={canManage} /> : null}
-
-      {tab === "uploads" ? (
-        canManage ? (
-          <FormUploadSettings formId={form.id} fields={uploadFieldsFromDefinition(form.definition)} />
-        ) : (
-          <Card>
-            <p className="font-bold text-[var(--muted)]">إعدادات الرفع متاحة للمالك فقط.</p>
-          </Card>
-        )
+      {tab === "customizations" ? (
+        <div className="grid gap-4">
+          <FormOutfitWorkspace
+            formId={form.id}
+            definition={form.definition}
+            canManage={canManage}
+            products={products}
+            categories={categories}
+            audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
+            focus="customizations"
+          />
+          {canManage ? <FormUploadSettings formId={form.id} fields={uploadFieldsFromDefinition(form.definition)} /> : null}
+        </div>
       ) : null}
 
       {tab === "products" ? (
@@ -165,34 +174,74 @@ export default async function FormManagePage({
           formId={form.id}
           definition={form.definition}
           products={products}
+          categories={categories}
           audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
           canManage={canManage}
         />
       ) : null}
 
-      {tab === "batch" && batch ? (
-        <div className="grid gap-4">
-          <Card>
-            <h2 className="text-2xl font-black text-[var(--olive-dark)]">إعدادات الدفعة</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Meta label="الدفعة" value={batch.name} />
-              <Meta label="الممثل" value={batch.representative_name ?? "غير معيّن"} />
-            </div>
-          </Card>
-          {canManage ? <BatchUniformForm formId={form.id} definition={form.definition} value={uniform} /> : null}
-        </div>
-      ) : null}
-
       {tab === "preview" ? (
         <Card>
-          <h2 className="text-2xl font-black text-[var(--olive-dark)]">معاينة نموذج الطالب</h2>
+          <h2 className="text-xl font-black text-[var(--olive-dark)]">معاينة الطالب</h2>
           <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-            تُفتح المعاينة في تبويب جديد حتى لا تختلط جلسة الإدارة مع نموذج الطالب.
+            افتح المعاينة كما يراها الطالب: البيانات، نوع الحجز، الزي، المنتجات، التخصيصات، التصاميم، ثم المراجعة.
           </p>
-          <LinkButton href={publicPath} target="_blank" rel="noreferrer" className="mt-4">
-            معاينة نموذج الطالب
-          </LinkButton>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <LinkButton href={previewHref} target="_blank" rel="noreferrer">
+              👁️ معاينة كطالب
+            </LinkButton>
+            <LinkButton href={publicPath} target="_blank" rel="noreferrer" variant="secondary">
+              الرابط العام
+            </LinkButton>
+          </div>
         </Card>
+      ) : null}
+
+      {tab === "publish" ? (
+        <div className="grid gap-4">
+          <Card>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">الحفظ والنشر</h2>
+            <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
+              النشر يظهر البطاقة للطلاب. الأرشفة تخفي النموذج دون حذف الطلبات أو اللقطات أو الملفات.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {canManage ? (
+                <>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await setFormStatusAction(form.id, form.status === "published" ? "closed" : "published");
+                    }}
+                  >
+                    <Button type="submit">{form.status === "published" ? "إغلاق" : "نشر"}</Button>
+                  </form>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await duplicateFormAction(form.id);
+                    }}
+                  >
+                    <Button type="submit" variant="secondary">
+                      نسخ النموذج
+                    </Button>
+                  </form>
+                  {form.status !== "archived" ? (
+                    <ArchiveConfirmButton
+                      label="أرشفة النموذج"
+                      title={`أرشفة «${form.name}»؟`}
+                      warning="سيتم أرشفة هذا النموذج ولن يظهر ضمن النماذج النشطة. الطلبات القديمة واللقطات والملفات المرتبطة به ستبقى محفوظة."
+                      action={archiveFormAction}
+                      hiddenFields={{ formId: form.id }}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <p className="font-bold text-[var(--muted)]">النشر والأرشفة متاحان للمالك فقط.</p>
+              )}
+            </div>
+          </Card>
+          {canManage ? <FormCopyPanel formId={form.id} forms={otherForms} /> : null}
+        </div>
       ) : null}
     </div>
   );

@@ -53,11 +53,20 @@ export type FullOutfit = {
   productOrder?: CoreProductId[];
 };
 
+export type BookingMode = "full_set" | "single_pieces";
+
+export type CatalogFormAssignment = {
+  bookingModes?: BookingMode[];
+  sortOrder?: number;
+  hidden?: boolean;
+};
+
 export type OutfitConfig = {
   fullOutfits: FullOutfit[];
   singleItemEnabled: boolean;
   singleItemProducts: CoreProductId[];
   productOrder: CoreProductId[];
+  catalogAssignments?: Record<string, CatalogFormAssignment>;
 };
 
 export type FormOption = {
@@ -76,6 +85,7 @@ export type FormOption = {
   priceIqd?: number | null;
   categorySlug?: string;
   categoryName?: string;
+  bookingModes?: Array<"full_set" | "single_pieces">;
 };
 
 export type ProductAvailabilityScope = "all" | "individual" | "batches" | "forms";

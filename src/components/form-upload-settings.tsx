@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { updateFormUploadSettingsAction } from "@/app/actions";
-import { Button, Card, FieldLabel, TextInput } from "@/components/ui";
+import { Button, Card, FieldLabel, Select, TextInput } from "@/components/ui";
 
 type FieldConfig = {
   key: string;
@@ -32,8 +32,7 @@ export function FormUploadSettings({ formId, fields }: { formId: string; fields:
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div>
                 <FieldLabel>وضع الرفع</FieldLabel>
-                <select
-                  className="min-h-11 w-full rounded-2xl border border-[var(--border)] bg-white px-3"
+                <Select
                   value={field.uploadMode ?? "single"}
                   onChange={(event) => {
                     const uploadMode = event.target.value as "single" | "multiple";
@@ -46,7 +45,7 @@ export function FormUploadSettings({ formId, fields }: { formId: string; fields:
                 >
                   <option value="single">صورة واحدة</option>
                   <option value="multiple">صور متعددة</option>
-                </select>
+                </Select>
               </div>
               <div>
                 <FieldLabel>الحد الأقصى</FieldLabel>
@@ -54,7 +53,6 @@ export function FormUploadSettings({ formId, fields }: { formId: string; fields:
                   type="number"
                   min={1}
                   max={10}
-                  className="min-h-11"
                   value={field.maxFiles ?? 1}
                   onChange={(event) =>
                     setRows((current) =>
@@ -65,8 +63,7 @@ export function FormUploadSettings({ formId, fields }: { formId: string; fields:
               </div>
               <div>
                 <FieldLabel>مطلوب؟</FieldLabel>
-                <select
-                  className="min-h-11 w-full rounded-2xl border border-[var(--border)] bg-white px-3"
+                <Select
                   value={field.required ? "yes" : "no"}
                   onChange={(event) =>
                     setRows((current) =>
@@ -76,14 +73,14 @@ export function FormUploadSettings({ formId, fields }: { formId: string; fields:
                 >
                   <option value="no">لا</option>
                   <option value="yes">نعم</option>
-                </select>
+                </Select>
               </div>
             </div>
           </div>
         ))}
       </div>
       <Button
-        className="mt-4 min-h-12"
+        className="mt-4"
         disabled={isPending}
         onClick={() =>
           startTransition(async () => {

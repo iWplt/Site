@@ -1,6 +1,8 @@
 import type {
+  CatalogFormAssignment,
   CatalogProduct,
   FormDefinition,
+  FormField,
   FormOption,
   FormSection,
   FormType,
@@ -67,7 +69,7 @@ export function isProductAvailable(availability: ProductAvailability[] | undefin
   return rows.some((row) => row.scope === "forms" && row.form_id === audience.formId);
 }
 
-export function productToFormOption(product: CatalogProduct, category: ProductCategory): FormOption {
+export function productToFormOption(product: CatalogProduct, category: ProductCategory, assignment?: { bookingModes?: Array<"full_set" | "single_pieces"> }): FormOption {
   return {
     id: `catalog-${product.id}`,
     value: product.id,
@@ -79,8 +81,45 @@ export function productToFormOption(product: CatalogProduct, category: ProductCa
     catalogProductId: product.id,
     priceIqd: product.price_iqd ?? null,
     categorySlug: category.slug,
-    categoryName: category.name_ar
+    categoryName: category.name_ar,
+    bookingModes: assignment?.bookingModes
   };
+}
+
+export function optionVisibleForBooking(
+  option: FormOption,
+  bookingType: unknown
+) {
+  if (option.enabled === false) return false;
+  if (!option.bookingModes?.length) return true;
+  const mode = bookingType === "single_pieces" ? "single_pieces" : "full_set";
+  return option.bookingModes.includes(mode);
+}
+
+export function customizationFieldsForCategory(definition: FormDefinition, categorySlug: string): FormField[] {
+  const mapped = CATALOG_LEGACY_FIELD_MAP[categorySlug];
+  if (!mapped) return [];
+  const section =
+    definition.sections.find((entry) => entry.id === mapped.sectionId) ??
+    definition.sections.find((entry) => entry.fields.some((field) => field.key === mapped.fieldKey));
+  return (section?.fields ?? []).filter((field) => field.key !== mapped.fieldKey && field.type !== "info");
+}
+
+export function assignedCatalogProducts(
+  products: CatalogProduct[],
+  audience: CatalogAudience,
+  assignments: Record<string, CatalogFormAssignment> | undefined
+) {
+  return filterAvailableProducts(products, audience)
+    .map((product) => ({
+      product,
+      assignment: assignments?.[product.id]
+    }))
+    .sort((a, b) => {
+      const orderA = a.assignment?.sortOrder ?? a.product.sort_order;
+      const orderB = b.assignment?.sortOrder ?? b.product.sort_order;
+      return orderA - orderB || a.product.name_ar.localeCompare(b.product.name_ar, "ar");
+    });
 }
 
 function optionValues(options: FormOption[] | undefined) {
@@ -97,10 +136,12 @@ export function mergeCatalogIntoDefinition(
   products: CatalogProduct[],
   categories: ProductCategory[]
 ): FormDefinition {
+  const assignments = definition.outfitConfig?.catalogAssignments ?? {};
   const liveCategories = [...categories].sort((a, b) => a.sort_order - b.sort_order || a.name_ar.localeCompare(b.name_ar, "ar"));
   const byCategory = new Map<string, CatalogProduct[]>();
   for (const product of products) {
     if (!product.active || product.archived) continue;
+    if (assignments[product.id]?.hidden) continue;
     const list = byCategory.get(product.category_id) ?? [];
     list.push(product);
     byCategory.set(product.category_id, list);
@@ -114,13 +155,15 @@ export function mergeCatalogIntoDefinition(
   const extraSections: FormSection[] = [];
 
   for (const category of liveCategories) {
-    const grouped = (byCategory.get(category.id) ?? []).sort(
-      (a, b) => a.sort_order - b.sort_order || a.name_ar.localeCompare(b.name_ar, "ar")
-    );
+    const grouped = (byCategory.get(category.id) ?? []).sort((a, b) => {
+      const orderA = assignments[a.id]?.sortOrder ?? a.sort_order;
+      const orderB = assignments[b.id]?.sortOrder ?? b.sort_order;
+      return orderA - orderB || a.name_ar.localeCompare(b.name_ar, "ar");
+    });
     if (!grouped.length) continue;
     if (category.slug === "embroidery") continue;
 
-    const options = grouped.map((product) => productToFormOption(product, category));
+    const options = grouped.map((product) => productToFormOption(product, category, assignments[product.id]));
     const mapped = CATALOG_LEGACY_FIELD_MAP[category.slug];
     if (mapped) {
       const section =

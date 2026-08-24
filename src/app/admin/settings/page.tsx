@@ -14,14 +14,15 @@ export default async function SettingsPage() {
   return (
     <div className="grid gap-4 sm:gap-6">
       <div>
-        <p className="text-sm font-bold text-[var(--gold)]">إدارة الحجوزات والمنتجات</p>
+        <p className="text-sm font-bold text-[var(--gold)]">النماذج والمنتجات</p>
         <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الصلاحيات والإعدادات</h1>
       </div>
       <BookingWorkspaceNav
         items={[
           { href: "/admin/batches", label: "الدفعات" },
-          { href: "/admin/forms", label: "النماذج والزي" },
-          { href: "/admin/products", label: "المنتجات المتاحة" },
+          { href: "/admin/forms", label: "النماذج" },
+          { href: "/admin/products", label: "المنتجات" },
+          { href: "/admin/products?view=models", label: "الموديلات" },
           { href: "/admin/settings", label: "الصلاحيات", current: true }
         ]}
       />

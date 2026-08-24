@@ -65,11 +65,14 @@ export function FormOverviewCard({
       </dl>
 
       <div className="relative z-10 mt-4 flex flex-wrap gap-2">
-        <LinkButton href={href} prefetch className="min-h-11 px-4 py-2">
+        <LinkButton href={href} prefetch>
           إدارة النموذج
         </LinkButton>
-        <LinkButton href={`${href}?tab=outfits`} prefetch variant="secondary" className="min-h-11 px-4 py-2">
-          الزي والمنتجات
+        <LinkButton href={`${href}?tab=outfits`} prefetch variant="secondary" size="sm">
+          الأزياء
+        </LinkButton>
+        <LinkButton href={`${href}?tab=products`} prefetch variant="secondary" size="sm">
+          المنتجات
         </LinkButton>
         {canManage ? (
           <>
@@ -79,7 +82,7 @@ export function FormOverviewCard({
                 await setFormStatusAction(form.id, form.status === "published" ? "closed" : "published");
               }}
             >
-              <Button type="submit" variant="secondary" className="min-h-11 px-4 py-2">
+              <Button type="submit" variant="secondary" size="sm">
                 {form.status === "published" ? "إغلاق" : "تفعيل"}
               </Button>
             </form>
@@ -89,14 +92,14 @@ export function FormOverviewCard({
                 await duplicateFormAction(form.id);
               }}
             >
-              <Button type="submit" variant="secondary" className="min-h-11 px-4 py-2">
+              <Button type="submit" variant="secondary" size="sm">
                 نسخ النموذج
               </Button>
             </form>
             <ArchiveConfirmButton
               label="أرشفة"
               title={`أرشفة «${form.name}»؟`}
-              warning="لن تُحذف الحجوزات أو الملفات أو لقطات الطلب السابقة. النموذج سيختفي من القائمة النشطة ويتوقف الحجز العام. الطلبات القديمة تبقى قابلة للقراءة."
+              warning="سيتم أرشفة هذا النموذج ولن يظهر ضمن النماذج النشطة. الطلبات القديمة واللقطات والملفات المرتبطة به ستبقى محفوظة."
               action={archiveFormAction}
               hiddenFields={{ formId: form.id }}
             />
