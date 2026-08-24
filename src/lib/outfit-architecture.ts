@@ -104,6 +104,20 @@ function sanitizeCatalogAssignments(raw?: Record<string, CatalogFormAssignment |
   return Object.keys(next).length ? next : undefined;
 }
 
+function sanitizeProductImages(raw?: FullOutfit["productImages"]): FullOutfit["productImages"] {
+  if (!raw) return undefined;
+  const next: NonNullable<FullOutfit["productImages"]> = {};
+  for (const id of CORE_PRODUCT_IDS) {
+    const entry = raw[id];
+    if (!entry) continue;
+    const imagePath = entry.imagePath?.trim() || undefined;
+    const imageUrl = entry.imageUrl?.trim() || undefined;
+    if (!imagePath && !imageUrl) continue;
+    next[id] = { imagePath, imageUrl };
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
 function sanitizeFullOutfit(outfit: FullOutfit, index: number, fallbackOrder: CoreProductId[]): FullOutfit | null {
   const name = outfit.name?.trim();
   if (!name) return null;
@@ -112,14 +126,28 @@ function sanitizeFullOutfit(outfit: FullOutfit, index: number, fallbackOrder: Co
     name,
     description: outfit.description?.trim() || undefined,
     imageUrl: outfit.imageUrl?.trim() || undefined,
+    imagePath: outfit.imagePath?.trim() || undefined,
     enabled: outfit.enabled !== false,
-    productOrder: ensureCoreProductOrder(outfit.productOrder ?? fallbackOrder)
+    productOrder: ensureCoreProductOrder(outfit.productOrder ?? fallbackOrder),
+    productImages: sanitizeProductImages(outfit.productImages)
   };
 }
 
 export function enabledFullOutfits(config: OutfitConfig) {
   const live = config.fullOutfits.filter((outfit) => outfit.enabled !== false);
   return live.length ? live : config.fullOutfits.slice(0, 1);
+}
+
+export function resolveSelectedOutfit(definition: FormDefinition, answers: Record<string, unknown>) {
+  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const outfits = enabledFullOutfits(config);
+  if (String(answers.booking_type) === "single_pieces" && config.singleItemEnabled) return undefined;
+  return outfits.find((outfit) => outfit.id === answers.full_outfit_id) ?? outfits[0];
+}
+
+export function outfitProductDisplayImage(outfit: FullOutfit | undefined, productId: string) {
+  if (!outfit || !CORE_PRODUCT_IDS.includes(productId as CoreProductId)) return undefined;
+  return outfit.productImages?.[productId as CoreProductId]?.imageUrl;
 }
 
 export function asStringList(value: unknown): string[] {
@@ -232,22 +260,28 @@ function ensureBookingFields(sections: FormSection[], config: OutfitConfig) {
     conditional: [{ fieldKey: "booking_type", operator: "equals", value: "single_pieces" }]
   });
 
+  const hasOutfitImages = outfits.some((outfit) => Boolean(outfit.imageUrl));
   upsertField(booking, {
     id: "full_outfit_id",
     key: "full_outfit_id",
     label: "الزي الكامل",
-    type: outfits.length > 1 ? "radio" : "read_only",
+    type: outfits.length > 1 || hasOutfitImages ? (hasOutfitImages ? "image_choice" : "radio") : "read_only",
     required: outfits.length > 1,
     defaultValue: outfits[0]?.id,
     description: "كل زي كامل يشمل الروب والوشاح والقبعة مع تخصيص كل منتج.",
+    showOptionImages: hasOutfitImages,
     options: outfits.map((outfit) => ({
       id: outfit.id,
       label: outfit.name,
       value: outfit.id,
       description: outfit.description,
-      imageUrl: outfit.imageUrl
+      imageUrl: outfit.imageUrl,
+      imagePath: outfit.imagePath
     })),
-    conditional: outfits.length > 1 ? [{ fieldKey: "booking_type", operator: "equals", value: "full_set" }] : [{ fieldKey: "booking_type", operator: "equals", value: "__hidden__" }]
+    conditional:
+      outfits.length > 1 || hasOutfitImages
+        ? [{ fieldKey: "booking_type", operator: "equals", value: "full_set" }]
+        : [{ fieldKey: "booking_type", operator: "equals", value: "__hidden__" }]
   });
 
   const bookingType = booking.fields.find((field) => field.key === "booking_type");
@@ -390,6 +424,7 @@ function upsertField(section: FormSection, field: FormField, afterKey?: string) 
         options: field.options,
         defaultValue: field.defaultValue ?? existing.defaultValue,
         description: field.description,
+        showOptionImages: field.showOptionImages,
         conditional: field.conditional
       };
       return;

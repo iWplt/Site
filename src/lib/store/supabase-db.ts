@@ -40,6 +40,7 @@ import type {
   BatchStatus,
   BookingFormRecord,
   CatalogFormAssignment,
+  CoreProductId,
   FormDefinition,
   FormOption,
   FormStatus,
@@ -2396,7 +2397,28 @@ export async function sbResolveDefinitionImages(definition: FormDefinition): Pro
       )
     }))
   );
-  return { ...definition, sections };
+  const outfitConfig = definition.outfitConfig
+    ? {
+        ...definition.outfitConfig,
+        fullOutfits: await Promise.all(
+          (definition.outfitConfig.fullOutfits ?? []).map(async (outfit) => {
+            const imageUrl = outfit.imagePath ? await sbResolveOptionImageUrl(outfit.imagePath) : outfit.imageUrl;
+            const productEntries = await Promise.all(
+              Object.entries(outfit.productImages ?? {}).map(async ([productId, image]) => {
+                const url = image.imagePath ? await sbResolveOptionImageUrl(image.imagePath) : image.imageUrl;
+                return [productId, { ...image, imageUrl: url }] as const;
+              })
+            );
+            return {
+              ...outfit,
+              imageUrl,
+              productImages: productEntries.length ? Object.fromEntries(productEntries) : outfit.productImages
+            };
+          })
+        )
+      }
+    : definition.outfitConfig;
+  return { ...definition, sections, outfitConfig };
 }
 
 /* -------------------------------------------------------------------------------------------- */
@@ -2464,6 +2486,60 @@ export async function sbDeleteOptionImage(formId: string, fieldKey: string, opti
   if (error) throw new Error(pgErrorMessage(error, "تعذر حذف الصورة."));
 
   return updatedOption;
+}
+
+export async function sbUploadOutfitAssetFile(
+  formId: string,
+  relativeKey: string,
+  file: UploadFileInput
+): Promise<{ imagePath: string; imageUrl?: string }> {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const extension = extensionFromNameOrMime(file.originalName, file.mimeType);
+  const path = `${sanitizeStorageSegment(formId)}/${relativeKey}/reference.${extension}`;
+  const { error } = await admin.storage.from(FORM_OPTIONS_BUCKET).upload(path, file.buffer, {
+    contentType: file.mimeType,
+    upsert: true
+  });
+  if (error) throw new Error(pgErrorMessage(error, "تعذر رفع الصورة."));
+  return { imagePath: path, imageUrl: await sbResolveOptionImageUrl(path) };
+}
+
+export async function sbDeleteOutfitAssetFile(imagePath: string) {
+  if (!imagePath || imagePath.startsWith("/") || /^https?:\/\//.test(imagePath)) return;
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  await admin.storage.from(FORM_OPTIONS_BUCKET).remove([imagePath]).catch(() => undefined);
+}
+
+export async function sbPatchOutfitImage(
+  formId: string,
+  outfitId: string,
+  productId: CoreProductId | undefined,
+  image: { imagePath?: string; imageUrl?: string } | null
+): Promise<OutfitConfig> {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  const nextOutfits = config.fullOutfits.map((outfit) => {
+    if (outfit.id !== outfitId) return outfit;
+    if (!productId) {
+      return { ...outfit, imagePath: image?.imagePath, imageUrl: image?.imageUrl };
+    }
+    const productImages = { ...(outfit.productImages ?? {}) };
+    if (!image) delete productImages[productId];
+    else productImages[productId] = image;
+    return { ...outfit, productImages: Object.keys(productImages).length ? productImages : undefined };
+  });
+  const nextConfig = sanitizeOutfitConfig({ ...config, fullOutfits: nextOutfits });
+  const { error } = await admin.from("booking_forms").update({ definition: { ...definition, outfitConfig: nextConfig } }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صورة الزي."));
+  await sbAudit(admin, productId ? "FORM_OUTFIT_PRODUCT_IMAGE_UPDATED" : "FORM_OUTFIT_IMAGE_UPDATED", "booking_form", formId, undefined, {
+    outfitId,
+    productId
+  });
+  return nextConfig;
 }
 
 export async function sbUploadStudentDesign(

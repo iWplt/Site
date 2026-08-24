@@ -44,13 +44,23 @@ export type ConditionalRule = {
 
 export type CoreProductId = "robe" | "sash" | "cap";
 
+export type OutfitProductImage = {
+  /** Durable Storage path or local /uploads/... path. */
+  imagePath?: string;
+  /** Resolved display URL (signed or public). */
+  imageUrl?: string;
+};
+
 export type FullOutfit = {
   id: string;
   name: string;
   description?: string;
   imageUrl?: string;
+  imagePath?: string;
   enabled?: boolean;
   productOrder?: CoreProductId[];
+  /** Outfit-specific images for assigned products. Does not change the global catalog. */
+  productImages?: Partial<Record<CoreProductId, OutfitProductImage>>;
 };
 
 export type BookingMode = "full_set" | "single_pieces";

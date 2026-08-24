@@ -26,12 +26,12 @@ import { answersWithSnapshot, buildOrderSnapshot } from "@/lib/order-snapshot";
 import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/lib/validation";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { mergeCatalogIntoDefinition, filterAvailableProducts } from "@/lib/product-catalog";
-import { applyOutfitArchitecture, normalizeCatalogAssignment, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { applyOutfitArchitecture, CORE_PRODUCT_IDS, normalizeCatalogAssignment, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
 import { applyCopiedFormConfig, catalogProductIdsFromDefinition, type CopyFormSlices } from "@/lib/form-config";
 import { getAdminForm } from "@/lib/data";
 import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
-import { deleteOptionImage, storeOptionImage } from "@/lib/storage/uploads";
+import { deleteOptionImage, deleteOutfitAssetFile, storeOptionImage, storeOutfitAsset } from "@/lib/storage/uploads";
 import {
   sbAssertBatchAccess,
   sbAssignRepresentativeBatches,
@@ -60,6 +60,7 @@ import {
   sbUpdateFormGeneral,
   sbUpdateFormOption,
   sbUpdateFormOutfitConfig,
+  sbPatchOutfitImage,
   sbPatchFormCatalogAssignment,
   sbAddFormOption,
   sbReplaceFormDefinition,
@@ -78,7 +79,7 @@ import {
   clientRateBucket,
   guardAccessCodeAttempt
 } from "@/lib/access-code-rate-limit";
-import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
+import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, CoreProductId, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
@@ -1410,6 +1411,92 @@ export async function deleteFormOptionImageAction(formId: string, fieldKey: stri
     });
   }
   revalidateAdmin();
+}
+
+function patchLocalOutfitImage(
+  formId: string,
+  outfitId: string,
+  productId: CoreProductId | undefined,
+  image: { imagePath?: string; imageUrl?: string } | null
+) {
+  mutateDb((db) => {
+    const form = db.forms.find((entry) => entry.id === formId);
+    if (!form) throw new Error("النموذج غير موجود.");
+    const config = sanitizeOutfitConfig(form.definition.outfitConfig);
+    form.definition = {
+      ...form.definition,
+      outfitConfig: sanitizeOutfitConfig({
+        ...config,
+        fullOutfits: config.fullOutfits.map((outfit) => {
+          if (outfit.id !== outfitId) return outfit;
+          if (!productId) return { ...outfit, imagePath: image?.imagePath, imageUrl: image?.imageUrl };
+          const productImages = { ...(outfit.productImages ?? {}) };
+          if (!image) delete productImages[productId];
+          else productImages[productId] = image;
+          return { ...outfit, productImages: Object.keys(productImages).length ? productImages : undefined };
+        })
+      })
+    };
+    audit(db, productId ? "FORM_OUTFIT_PRODUCT_IMAGE_UPDATED" : "FORM_OUTFIT_IMAGE_UPDATED", "booking_form", formId, { label: "owner" }, {
+      outfitId,
+      productId
+    });
+  });
+}
+
+export async function uploadOutfitImageAction(formData: FormData) {
+  await requireUser(["OWNER"]);
+  const formId = String(formData.get("formId") ?? "").trim();
+  const outfitId = String(formData.get("outfitId") ?? "").trim();
+  const productRaw = String(formData.get("productId") ?? "").trim();
+  const productId = CORE_PRODUCT_IDS.includes(productRaw as CoreProductId) ? (productRaw as CoreProductId) : undefined;
+  const file = formData.get("file");
+  if (!formId || !outfitId || !(file instanceof File)) return { error: "بيانات الصورة غير مكتملة." };
+  if (file.size > MAX_OPTION_IMAGE_BYTES) return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
+    if (!mimeType) return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+    const stored = await storeOutfitAsset(formId, outfitId, productId, {
+      buffer,
+      mimeType,
+      originalName: file.name
+    });
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbPatchOutfitImage(formId, outfitId, productId, stored);
+    } else {
+      patchLocalOutfitImage(formId, outfitId, productId, stored);
+    }
+    revalidateAdmin();
+    return { success: true as const, imagePath: stored.imagePath, imageUrl: stored.imageUrl };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر رفع الصورة." };
+  }
+}
+
+export async function deleteOutfitImageAction(formId: string, outfitId: string, productId?: CoreProductId) {
+  await requireUser(["OWNER"]);
+  if (!formId || !outfitId) return { error: "بيانات الصورة غير مكتملة." };
+  try {
+    let previousPath: string | undefined;
+    if (assertPersistenceAllowed() === "supabase") {
+      const definition = await sbGetFormDefinition(formId);
+      const outfit = sanitizeOutfitConfig(definition.outfitConfig).fullOutfits.find((entry) => entry.id === outfitId);
+      previousPath = productId ? outfit?.productImages?.[productId]?.imagePath : outfit?.imagePath;
+      await sbPatchOutfitImage(formId, outfitId, productId, null);
+    } else {
+      const db = readDb();
+      const form = db.forms.find((entry) => entry.id === formId);
+      const outfit = sanitizeOutfitConfig(form?.definition.outfitConfig).fullOutfits.find((entry) => entry.id === outfitId);
+      previousPath = productId ? outfit?.productImages?.[productId]?.imagePath : outfit?.imagePath;
+      patchLocalOutfitImage(formId, outfitId, productId, null);
+    }
+    await deleteOutfitAssetFile(previousPath);
+    revalidateAdmin();
+    return { success: true as const };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "تعذر حذف الصورة." };
+  }
 }
 
 export async function updateFormGeneralAction(_state: { error?: string; success?: string } | undefined, formData: FormData) {

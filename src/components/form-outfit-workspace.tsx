@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { GripVertical } from "lucide-react";
 import {
   addFormOptionAction,
+  deleteOutfitImageAction,
   reorderFormOptionsAction,
   updateFormFieldMetaAction,
   updateFormOptionAction,
-  updateFormOutfitConfigAction
+  updateFormOutfitConfigAction,
+  uploadOutfitImageAction
 } from "@/app/actions";
 import { Button, Card, FieldLabel, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
 import { FormProductAssignModal } from "@/components/form-product-assign-modal";
@@ -23,6 +25,7 @@ import type {
   FormOption,
   FullOutfit,
   OutfitConfig,
+  OutfitProductImage,
   ProductCategory
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -177,11 +180,22 @@ export function FormOutfitWorkspace({
               {config.fullOutfits.map((outfit, index) => (
                 <OutfitEditor
                   key={outfit.id}
+                  formId={formId}
                   outfit={outfit}
                   disabled={!canManage || pending}
                   onChange={(patch) => {
                     const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
                     markConfig({ ...config, fullOutfits });
+                  }}
+                  onImagesChange={(patch) => {
+                    setConfig((current) =>
+                      sanitizeOutfitConfig({
+                        ...current,
+                        fullOutfits: current.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry)),
+                        catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+                      })
+                    );
+                    router.refresh();
                   }}
                   onArchive={() => {
                     const enabledCount = config.fullOutfits.filter((entry) => entry.enabled !== false).length;
@@ -302,15 +316,114 @@ export function FormOutfitWorkspace({
   );
 }
 
+function OutfitImageSlot({
+  formId,
+  outfitId,
+  productId,
+  label,
+  image,
+  disabled,
+  onSaved
+}: {
+  formId: string;
+  outfitId: string;
+  productId?: CoreProductId;
+  label: string;
+  image?: OutfitProductImage;
+  disabled: boolean;
+  onSaved: (next?: OutfitProductImage) => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string>();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const preview = image?.imageUrl;
+  const hasImage = Boolean(preview);
+
+  function upload(file: File | undefined) {
+    if (!file) return;
+    startTransition(async () => {
+      const body = new FormData();
+      body.set("formId", formId);
+      body.set("outfitId", outfitId);
+      if (productId) body.set("productId", productId);
+      body.set("file", file);
+      const result = await uploadOutfitImageAction(body);
+      if (result.error) {
+        setMessage(result.error);
+        return;
+      }
+      onSaved({ imagePath: result.imagePath, imageUrl: result.imageUrl });
+      setMessage("تم رفع الصورة.");
+    });
+  }
+
+  function remove() {
+    startTransition(async () => {
+      const result = await deleteOutfitImageAction(formId, outfitId, productId);
+      if (result.error) {
+        setMessage(result.error);
+        return;
+      }
+      onSaved(undefined);
+      setMessage("تم حذف الصورة.");
+    });
+  }
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-[var(--border)] bg-white/80 p-2 sm:grid-cols-[4.5rem_1fr] sm:items-center">
+      <div className="overflow-hidden rounded-lg border border-dashed border-[var(--border)] bg-[#3f472d08]">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={preview} alt={label} className="aspect-square w-full object-cover" />
+        ) : (
+          <div className="grid aspect-square place-items-center px-1 text-center text-[10px] font-bold leading-4 text-[var(--muted)]">
+            بدون صورة
+          </div>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-black text-[var(--olive-dark)]">{label}</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            upload(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        {!disabled ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => fileRef.current?.click()}>
+              {hasImage ? "تغيير الصورة" : "رفع صورة"}
+            </Button>
+            {hasImage ? (
+              <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={remove}>
+                حذف الصورة
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {message ? <p className="mt-1 text-[11px] font-bold text-[var(--olive)]">{message}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function OutfitEditor({
+  formId,
   outfit,
   disabled,
   onChange,
+  onImagesChange,
   onArchive
 }: {
+  formId: string;
   outfit: FullOutfit;
   disabled: boolean;
   onChange: (patch: Partial<FullOutfit>) => void;
+  onImagesChange: (patch: Partial<FullOutfit>) => void;
   onArchive: () => void;
 }) {
   return (
@@ -328,45 +441,72 @@ function OutfitEditor({
         <FieldLabel>الوصف</FieldLabel>
         <TextArea defaultValue={outfit.description ?? ""} disabled={disabled} onBlur={(event) => onChange({ description: event.target.value })} />
       </div>
+      <div className="mt-3">
+        <FieldLabel>صورة الزي الكاملة</FieldLabel>
+        <OutfitImageSlot
+          formId={formId}
+          outfitId={outfit.id}
+          label={outfit.name}
+          image={{ imagePath: outfit.imagePath, imageUrl: outfit.imageUrl }}
+          disabled={disabled}
+          onSaved={(next) => onImagesChange({ imagePath: next?.imagePath, imageUrl: next?.imageUrl })}
+        />
+      </div>
       <p className="mt-3 text-sm font-bold text-[var(--olive)]">المنتجات المشمولة دائماً: روب + وشاح + قبعة</p>
-      <ol className="mt-2 grid gap-1">
+      <ol className="mt-2 grid gap-2">
         {(outfit.productOrder?.length ? outfit.productOrder : [...CORE_PRODUCT_IDS]).map((productId, index, list) => (
-          <li key={productId} className="flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-bold">
-            <span className="flex-1 text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[productId]}</span>
-            {!disabled ? (
-              <div className="flex gap-1">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  aria-label="أعلى"
-                  disabled={index === 0}
-                  onClick={() => {
-                    const next = [...list];
-                    const [item] = next.splice(index, 1);
-                    next.splice(index - 1, 0, item);
-                    onChange({ productOrder: next });
-                  }}
-                >
-                  ↑
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  aria-label="أسفل"
-                  disabled={index === list.length - 1}
-                  onClick={() => {
-                    const next = [...list];
-                    const [item] = next.splice(index, 1);
-                    next.splice(index + 1, 0, item);
-                    onChange({ productOrder: next });
-                  }}
-                >
-                  ↓
-                </Button>
-              </div>
-            ) : null}
+          <li key={productId} className="grid gap-2 rounded-xl bg-white/80 p-2">
+            <div className="flex items-center gap-2 text-sm font-bold">
+              <span className="flex-1 text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[productId]}</span>
+              {!disabled ? (
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    aria-label="أعلى"
+                    disabled={index === 0}
+                    onClick={() => {
+                      const next = [...list];
+                      const [item] = next.splice(index, 1);
+                      next.splice(index - 1, 0, item);
+                      onChange({ productOrder: next });
+                    }}
+                  >
+                    ↑
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    aria-label="أسفل"
+                    disabled={index === list.length - 1}
+                    onClick={() => {
+                      const next = [...list];
+                      const [item] = next.splice(index, 1);
+                      next.splice(index + 1, 0, item);
+                      onChange({ productOrder: next });
+                    }}
+                  >
+                    ↓
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <OutfitImageSlot
+              formId={formId}
+              outfitId={outfit.id}
+              productId={productId}
+              label={`صورة ${CORE_PRODUCT_LABELS[productId]}`}
+              image={outfit.productImages?.[productId]}
+              disabled={disabled}
+              onSaved={(next) => {
+                const productImages = { ...(outfit.productImages ?? {}) };
+                if (!next) delete productImages[productId];
+                else productImages[productId] = next;
+                onImagesChange({ productImages: Object.keys(productImages).length ? productImages : undefined });
+              }}
+            />
           </li>
         ))}
       </ol>

@@ -3,8 +3,11 @@ import test from "node:test";
 import { defaultWarkaFormDefinition, fieldIsVisible } from "./form-definition.ts";
 import {
   applyOutfitArchitecture,
+  outfitProductDisplayImage,
   productIsSelected,
-  resolveOutfitAnswers
+  resolveOutfitAnswers,
+  resolveSelectedOutfit,
+  sanitizeOutfitConfig
 } from "./outfit-architecture.ts";
 import type { FormDefinition } from "./types.ts";
 
@@ -133,4 +136,70 @@ test("product order moves robe measurements with robe", () => {
   assert.ok(ids.indexOf("cap") < ids.indexOf("robe"));
   assert.ok(ids.indexOf("robe") < ids.indexOf("sash"));
   assert.ok(keys(live, "robe").includes("robe_height"));
+});
+
+test("sanitize preserves outfit cover and per-product assignment images", () => {
+  const config = sanitizeOutfitConfig({
+    fullOutfits: [
+      {
+        id: "royal",
+        name: "زي ملكي",
+        enabled: true,
+        productOrder: ["robe", "sash", "cap"],
+        imagePath: "form/outfits/royal/cover/reference.webp",
+        imageUrl: "/uploads/royal.webp",
+        productImages: {
+          robe: { imagePath: "form/outfits/royal/products/robe/reference.webp", imageUrl: "/uploads/robe.webp" }
+        }
+      }
+    ],
+    singleItemEnabled: true,
+    singleItemProducts: ["robe", "sash", "cap"],
+    productOrder: ["robe", "sash", "cap"]
+  });
+  assert.equal(config.fullOutfits[0]?.imagePath, "form/outfits/royal/cover/reference.webp");
+  assert.equal(config.fullOutfits[0]?.imageUrl, "/uploads/royal.webp");
+  assert.equal(config.fullOutfits[0]?.productImages?.robe?.imageUrl, "/uploads/robe.webp");
+});
+
+test("architecture maps outfit images onto the student outfit field", () => {
+  const live = applyOutfitArchitecture({
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        { id: "mix", name: "زي مكس", enabled: true, productOrder: ["robe", "sash", "cap"], imageUrl: "/warka/mix.webp" },
+        { id: "royal", name: "زي ملكي", enabled: true, productOrder: ["robe", "sash", "cap"], imageUrl: "/warka/royal.webp" }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  });
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "full_outfit_id");
+  assert.equal(field?.showOptionImages, true);
+  assert.equal(field?.options?.find((option) => option.id === "royal")?.imageUrl, "/warka/royal.webp");
+});
+
+test("outfit product images appear only for the selected full outfit", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "royal",
+          name: "زي ملكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productImages: { sash: { imageUrl: "/uploads/royal-sash.webp" } }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const full = resolveOutfitAnswers(definition, { booking_type: "full_set", full_outfit_id: "royal" });
+  const single = resolveOutfitAnswers(definition, { booking_type: "single_pieces", selected_products: ["sash"] });
+  assert.equal(outfitProductDisplayImage(resolveSelectedOutfit(definition, full), "sash"), "/uploads/royal-sash.webp");
+  assert.equal(outfitProductDisplayImage(resolveSelectedOutfit(definition, single), "sash"), undefined);
 });

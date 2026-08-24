@@ -113,6 +113,45 @@ export async function storeOptionImage(
   return { optionId, imagePath, imageUrl: imagePath };
 }
 
+export type StoredOutfitAsset = {
+  imagePath: string;
+  imageUrl?: string;
+};
+
+/**
+ * Stores an Owner-managed outfit or outfit-product image in the same form-options
+ * bucket as option reference photos. The caller persists paths onto `outfitConfig`.
+ */
+export async function storeOutfitAsset(
+  formId: string,
+  outfitId: string,
+  productId: string | undefined,
+  file: UploadInputFile
+): Promise<StoredOutfitAsset> {
+  const relativeKey = productId
+    ? `outfits/${sanitizeStorageSegment(outfitId)}/products/${sanitizeStorageSegment(productId)}`
+    : `outfits/${sanitizeStorageSegment(outfitId)}/cover`;
+
+  if (getPersistenceMode() === "supabase") {
+    const { sbUploadOutfitAssetFile } = await import("@/lib/store/supabase-db");
+    return sbUploadOutfitAssetFile(formId, relativeKey, file);
+  }
+
+  const extension = extensionForMime(file.mimeType);
+  const fileName = `reference.${extension}`;
+  const relativeDir = join("uploads", "form-options", sanitizeStorageSegment(formId), ...relativeKey.split("/"));
+  const imagePath = writePublicFile(relativeDir, fileName, file.buffer);
+  return { imagePath, imageUrl: imagePath };
+}
+
+export async function deleteOutfitAssetFile(imagePath: string | undefined) {
+  if (!imagePath) return;
+  if (getPersistenceMode() === "supabase") {
+    const { sbDeleteOutfitAssetFile } = await import("@/lib/store/supabase-db");
+    await sbDeleteOutfitAssetFile(imagePath);
+  }
+}
+
 /**
  * Deletes an Owner-managed option reference image. In Supabase mode this also clears
  * `imagePath`/`imageUrl` on the persisted form definition. In local-demo mode the caller is

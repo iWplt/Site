@@ -10,7 +10,7 @@ import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
-import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
+import { asStringList, isBlankValue, outfitProductDisplayImage, resolveOutfitAnswers, resolveSelectedOutfit } from "@/lib/outfit-architecture";
 import { formatProductPrice, optionVisibleForBooking } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -65,6 +65,10 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   const activeStep = Math.min(step, sections.length);
   const isReview = activeStep >= sections.length;
   const stepLabels = [...sections.map((section) => section.title), "مراجعة الطلب"];
+  const activeSection = sections[activeStep];
+  const activeProductImage = activeSection
+    ? outfitProductDisplayImage(resolveSelectedOutfit(form.definition, answers), activeSection.id)
+    : undefined;
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -196,6 +200,11 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
           <p className="text-xs font-bold text-[var(--gold)]">{String(activeStep + 1).padStart(2, "0")}</p>
           <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[activeStep].title}</h2>
           {sections[activeStep].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[activeStep].description}</p> : null}
+          {activeProductImage ? (
+            <div className="mt-4 overflow-hidden rounded-[1.2rem] border border-[var(--border)] bg-white">
+              <OptimizedThumb src={activeProductImage} alt={sections[activeStep].title} sizes="(max-width: 768px) 100vw, 640px" eager />
+            </div>
+          ) : null}
           <div className="mt-6 grid gap-6">
             {visibleFields.map((field, fieldIndex) => (
               <FieldRenderer
