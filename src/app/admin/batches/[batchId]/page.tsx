@@ -1,11 +1,10 @@
 import { notFound } from "next/navigation";
 import { archiveBatchAction } from "@/app/actions";
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
-import { BatchUniformForm } from "@/components/batch-uniform-form";
 import { BookingWorkspaceNav, batchWorkspaceItems } from "@/components/booking-workspace-nav";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getBatch, getFixedOptions, getPublicForm, listStudents, listSubmissions } from "@/lib/data";
+import { getBatch, listStudents, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
 
 export default async function BatchDetailPage({
@@ -20,12 +19,8 @@ export default async function BatchDetailPage({
   const { created } = await searchParams;
   const batch = await getBatch(user, batchId);
   if (!batch) notFound();
-  const [students, orders, uniform, formWithImages] = await Promise.all([
-    listStudents(user, { batchId }),
-    listSubmissions(user, { batchId }),
-    batch.form ? getFixedOptions(user, batch.form.id) : Promise.resolve({}),
-    batch.form ? getPublicForm(batch.form.slug) : Promise.resolve(null)
-  ]);
+  const [students, orders] = await Promise.all([listStudents(user, { batchId }), listSubmissions(user, { batchId })]);
+  const formHref = batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms";
 
   return (
     <div className="grid gap-4 sm:gap-6">
@@ -68,19 +63,31 @@ export default async function BatchDetailPage({
       />
 
       <div className="flex flex-wrap gap-2">
-        <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary">نظرة عامة</LinkButton>
-        <LinkButton href={`/admin/batches/${batch.id}/students`} variant="secondary">الطلاب</LinkButton>
-        <LinkButton href={`/admin/batches/${batch.id}/orders`} variant="secondary">الحجوزات</LinkButton>
-        <LinkButton href={batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms"} variant="secondary">
+        <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary">
+          نظرة عامة
+        </LinkButton>
+        <LinkButton href={`/admin/batches/${batch.id}/students`} variant="secondary">
+          الطلاب
+        </LinkButton>
+        <LinkButton href={`/admin/batches/${batch.id}/orders`} variant="secondary">
+          الحجوزات
+        </LinkButton>
+        <LinkButton href={formHref} variant="secondary">
           النموذج
         </LinkButton>
         {batch.form ? (
-          <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary">
-            الأزياء
-          </LinkButton>
+          <>
+            <LinkButton href={`${formHref}?tab=products`} variant="secondary">
+              منتجات النموذج
+            </LinkButton>
+            <LinkButton href={`${formHref}?tab=outfits`} variant="secondary">
+              الأزياء
+            </LinkButton>
+          </>
         ) : null}
-        <LinkButton href="/admin/products" variant="secondary">المنتجات</LinkButton>
-        <LinkButton href="/admin/representatives" variant="secondary">الممثلون</LinkButton>
+        <LinkButton href="/admin/representatives" variant="secondary">
+          الممثلون
+        </LinkButton>
         {user.role === "OWNER" && batch.status !== "archived" ? (
           <ArchiveConfirmButton
             label="أرشفة الدفعة"
@@ -105,15 +112,19 @@ export default async function BatchDetailPage({
           <p className="mt-3 font-bold">{batch.representative_name ?? "غير معيّن"}</p>
           <h3 className="mt-6 font-black text-[var(--olive)]">النموذج</h3>
           <p className="mt-2">{batch.form?.name ?? "لا يوجد نموذج مرتبط"}</p>
+          <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
+            المنتجات والأزياء تُدار من النموذج. الدفعة تستخدم نموذجها ولا تملك كتالوج منتجات منفصلاً.
+          </p>
           {batch.form ? (
             <div className="mt-4 flex flex-wrap gap-2">
-              <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`}>
-                إدارة الزي والمنتجات
+              <LinkButton href={`${formHref}?tab=products`}>منتجات النموذج</LinkButton>
+              <LinkButton href={`${formHref}?tab=outfits`} variant="secondary">
+                إعدادات الأزياء
               </LinkButton>
               <LinkButton href={`/f/${batch.form.slug}`} variant="secondary">
                 فتح الرابط العام
               </LinkButton>
-              <LinkButton href={`/admin/forms/${batch.form.id}`} variant="secondary">
+              <LinkButton href={formHref} variant="secondary">
                 إدارة النموذج
               </LinkButton>
             </div>
@@ -134,10 +145,6 @@ export default async function BatchDetailPage({
           </div>
         </Card>
       </div>
-
-      {formWithImages ? (
-        <BatchUniformForm formId={formWithImages.id} definition={formWithImages.definition} value={uniform} />
-      ) : null}
     </div>
   );
 }

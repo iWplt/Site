@@ -12,21 +12,17 @@ import {
   updateFormOutfitConfigAction,
   uploadOutfitImageAction
 } from "@/app/actions";
-import { Button, Card, FieldLabel, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
-import { FormProductAssignModal } from "@/components/form-product-assign-modal";
+import { Button, Card, FieldLabel, LinkButton, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
 import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
 import { OUTFIT_PRESETS, PRODUCT_MODEL_KEYS } from "@/lib/form-config";
-import { CATALOG_LEGACY_FIELD_MAP, type CatalogAudience } from "@/lib/product-catalog";
 import type {
-  CatalogProduct,
   CoreProductId,
   FormDefinition,
   FormField,
   FormOption,
   FullOutfit,
   OutfitConfig,
-  OutfitProductImage,
-  ProductCategory
+  OutfitProductImage
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -34,18 +30,12 @@ export function FormOutfitWorkspace({
   formId,
   definition,
   canManage,
-  products = [],
-  categories = [],
-  audience,
   focus = "outfits"
 }: {
   formId: string;
   definition: FormDefinition;
   canManage: boolean;
-  products?: CatalogProduct[];
-  categories?: ProductCategory[];
-  audience?: CatalogAudience;
-  focus?: "outfits" | "customizations";
+  focus?: "outfits" | "customizations" | "products";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -120,62 +110,48 @@ export function FormOutfitWorkspace({
 
   return (
     <div className="grid gap-4">
-      <div className="sticky top-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-[var(--paper)]/95 px-3 py-2 shadow-sm">
-        <p className="text-sm font-bold text-[var(--olive-dark)]">
-          {dirty ? "● توجد تغييرات غير محفوظة" : saved ? "✓ تم الحفظ" : "إعدادات الزي والمنتجات"}
-        </p>
-        {canManage ? (
-          <Button type="button" size="sm" disabled={pending || !dirty} onClick={saveConfig}>
-            حفظ التغييرات
-          </Button>
-        ) : null}
-      </div>
+      {(focus === "outfits" || focus === "products") ? (
+        <div className="sticky top-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-[var(--paper)]/95 px-3 py-2 shadow-sm">
+          <p className="text-sm font-bold text-[var(--olive-dark)]">
+            {dirty
+              ? "● توجد تغييرات غير محفوظة"
+              : saved
+                ? "✓ تم الحفظ"
+                : focus === "outfits"
+                  ? "إعدادات الأزياء"
+                  : "ترتيب منتجات الطالب"}
+          </p>
+          {canManage ? (
+            <Button type="button" size="sm" disabled={pending || !dirty} onClick={saveConfig}>
+              حفظ التغييرات
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {message ? <p className="text-sm font-bold text-[var(--success)]">{message}</p> : null}
 
       {focus === "outfits" ? (
         <>
           <Card>
-            <h2 className="text-xl font-black text-[var(--olive-dark)]">ترتيب المنتجات في نموذج الطالب</h2>
-            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">اسحب أو استخدم الأسهم. قياسات الروب تنتقل معه.</p>
-            <ol className="mt-4 grid gap-2">
-              {config.productOrder.map((product, index) => (
-                <li
-                  key={product}
-                  draggable={canManage}
-                  onDragStart={() => setDragIndex(index)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    if (dragIndex == null) return;
-                    moveProduct(dragIndex, index);
-                    setDragIndex(null);
-                  }}
-                  className={cn(
-                    "flex items-center gap-3 rounded-[1.1rem] border border-[var(--border)] bg-white/70 px-3 py-2.5",
-                    dragIndex === index && "ring-2 ring-[var(--olive)]"
-                  )}
-                >
-                  <GripVertical className="text-[var(--muted)]" size={16} />
-                  <span className="flex-1 font-black text-[var(--olive-dark)]">
-                    {index + 1}. {CORE_PRODUCT_LABELS[product]}
-                  </span>
-                  {canManage ? (
-                    <div className="flex gap-1">
-                      <Button type="button" variant="secondary" size="icon" aria-label="أعلى" disabled={pending || index === 0} onClick={() => moveProduct(index, index - 1)}>
-                        ↑
-                      </Button>
-                      <Button type="button" variant="secondary" size="icon" aria-label="أسفل" disabled={pending || index === config.productOrder.length - 1} onClick={() => moveProduct(index, index + 1)}>
-                        ↓
-                      </Button>
-                    </div>
-                  ) : null}
-                </li>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">منتجات النموذج</h2>
+            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
+              الأزياء إعدادات فوق منتجات هذا النموذج. الزي الكامل يستخدم دائماً الروب والوشاح والقبعة، والطالب يخصص كل قطعة دون حذفها. إدارة الموديلات والتخصيصات من تبويب المنتجات.
+            </p>
+            <ul className="mt-3 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
+              {CORE_PRODUCT_IDS.map((product) => (
+                <li key={product}>- {CORE_PRODUCT_LABELS[product]}</li>
               ))}
-            </ol>
+            </ul>
+            <LinkButton href={`/admin/forms/${formId}?tab=products`} variant="secondary" size="sm" className="mt-3">
+              إدارة منتجات النموذج
+            </LinkButton>
           </Card>
 
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">الأزياء الكاملة</h2>
-            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">كل زي كامل يتضمن دائماً الروب والوشاح والقبعة.</p>
+            <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
+              كل زي إعداد فوق منتجات النموذج: روب ووشاح وقبعة دائماً. يمكن تغيير الاسم والصورة والترتيب، ولا يمكن حذف القطع من الزي الكامل.
+            </p>
             <div className="mt-4 grid gap-3">
               {config.fullOutfits.map((outfit, index) => (
                 <OutfitEditor
@@ -257,7 +233,9 @@ export function FormOutfitWorkspace({
               />
               السماح للطلاب بحجز قطع منفردة
             </label>
-            <p className="mt-2 text-sm text-[var(--muted)]">المنتجات المسموح اختيارها عند الحجز المفرد:</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              الحجز المفرد يستخدم منتجات النموذج نفسها. حدّد القطع المسموح حجزها منفردة دون تغيير الزي الكامل.
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {CORE_PRODUCT_IDS.map((product) => {
                 const checked = config.singleItemProducts.includes(product);
@@ -283,35 +261,89 @@ export function FormOutfitWorkspace({
         </>
       ) : null}
 
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن منتج..." />
-        <div className="flex flex-wrap gap-1">
-          {(["all", ...CORE_PRODUCT_IDS] as const).map((entry) => (
-            <Button key={entry} type="button" size="sm" variant={filter === entry ? "primary" : "secondary"} onClick={() => setFilter(entry)}>
-              {entry === "all" ? "الكل" : CORE_PRODUCT_LABELS[entry]}
-            </Button>
-          ))}
-        </div>
-      </div>
+      {focus === "products" || focus === "customizations" ? (
+        <>
+          {focus === "products" ? (
+            <Card>
+              <h2 className="text-xl font-black text-[var(--olive-dark)]">ترتيب المنتجات في نموذج الطالب</h2>
+              <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
+                هذا الترتيب عام لنموذج الطالب. قياسات الروب تنتقل مع الروب. الزي الكامل يبقى روب ووشاح وقبعة مهما تغيّر الترتيب.
+              </p>
+              <ol className="mt-4 grid gap-2">
+                {config.productOrder.map((product, index) => (
+                  <li
+                    key={product}
+                    draggable={canManage}
+                    onDragStart={() => setDragIndex(index)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      if (dragIndex == null) return;
+                      moveProduct(dragIndex, index);
+                      setDragIndex(null);
+                    }}
+                    className={cn(
+                      "flex items-center gap-3 rounded-[1.1rem] border border-[var(--border)] bg-white/70 px-3 py-2.5",
+                      dragIndex === index && "ring-2 ring-[var(--olive)]"
+                    )}
+                  >
+                    <GripVertical className="text-[var(--muted)]" size={16} />
+                    <span className="flex-1 font-black text-[var(--olive-dark)]">
+                      {index + 1}. {CORE_PRODUCT_LABELS[product]}
+                    </span>
+                    {canManage ? (
+                      <div className="flex gap-1">
+                        <Button type="button" variant="secondary" size="icon" aria-label="أعلى" disabled={pending || index === 0} onClick={() => moveProduct(index, index - 1)}>
+                          ↑
+                        </Button>
+                        <Button type="button" variant="secondary" size="icon" aria-label="أسفل" disabled={pending || index === config.productOrder.length - 1} onClick={() => moveProduct(index, index + 1)}>
+                          ↓
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          ) : (
+            <Card>
+              <h2 className="text-xl font-black text-[var(--olive-dark)]">تخصيصات منتجات النموذج</h2>
+              <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
+                التطريز والتصاميم والألوان والملاحظات والرفع وقياسات الروب تُدار هنا على منتجات النموذج. الزي الكامل لا يحذف هذه القطع، والحجز المفرد يبقي سلوكه كما هو.
+              </p>
+              <LinkButton href={`/admin/forms/${formId}?tab=products`} variant="secondary" size="sm" className="mt-3">
+                منتجات النموذج
+              </LinkButton>
+            </Card>
+          )}
 
-      {visibleProducts.map((product) => (
-        <ProductConfigCard
-          key={product}
-          product={product}
-          field={fieldsByKey.get(PRODUCT_MODEL_KEYS[product])}
-          extraFields={definition.sections.find((section) => section.id === product)?.fields ?? []}
-          canManage={canManage}
-          pending={pending}
-          formId={formId}
-          definition={definition}
-          products={products}
-          categories={categories}
-          audience={audience}
-          expandCustomizations={focus === "customizations"}
-          singleItemVisible={config.singleItemProducts.includes(product)}
-          onRefresh={() => router.refresh()}
-        />
-      ))}
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن منتج..." />
+            <div className="flex flex-wrap gap-1">
+              {(["all", ...CORE_PRODUCT_IDS] as const).map((entry) => (
+                <Button key={entry} type="button" size="sm" variant={filter === entry ? "primary" : "secondary"} onClick={() => setFilter(entry)}>
+                  {entry === "all" ? "الكل" : CORE_PRODUCT_LABELS[entry]}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {visibleProducts.map((product) => (
+            <ProductConfigCard
+              key={product}
+              product={product}
+              field={fieldsByKey.get(PRODUCT_MODEL_KEYS[product])}
+              extraFields={definition.sections.find((section) => section.id === product)?.fields ?? []}
+              canManage={canManage}
+              pending={pending}
+              formId={formId}
+              expandCustomizations={focus === "customizations"}
+              showModelEditor={focus === "products"}
+              singleItemVisible={config.singleItemProducts.includes(product)}
+              onRefresh={() => router.refresh()}
+            />
+          ))}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -452,7 +484,7 @@ function OutfitEditor({
           onSaved={(next) => onImagesChange({ imagePath: next?.imagePath, imageUrl: next?.imageUrl })}
         />
       </div>
-      <p className="mt-3 text-sm font-bold text-[var(--olive)]">المنتجات المشمولة دائماً: روب + وشاح + قبعة</p>
+      <p className="mt-3 text-sm font-bold text-[var(--olive)]">منتجات النموذج المشمولة دائماً: روب + وشاح + قبعة</p>
       <ol className="mt-2 grid gap-2">
         {(outfit.productOrder?.length ? outfit.productOrder : [...CORE_PRODUCT_IDS]).map((productId, index, list) => (
           <li key={productId} className="grid gap-2 rounded-xl bg-white/80 p-2">
@@ -526,11 +558,8 @@ function ProductConfigCard({
   canManage,
   pending,
   formId,
-  definition,
-  products,
-  categories,
-  audience,
   expandCustomizations,
+  showModelEditor,
   singleItemVisible,
   onRefresh
 }: {
@@ -540,23 +569,18 @@ function ProductConfigCard({
   canManage: boolean;
   pending: boolean;
   formId: string;
-  definition: FormDefinition;
-  products: CatalogProduct[];
-  categories: ProductCategory[];
-  audience?: CatalogAudience;
   expandCustomizations: boolean;
+  showModelEditor: boolean;
   singleItemVisible: boolean;
   onRefresh: () => void;
 }) {
   const [open, setOpen] = useState(expandCustomizations);
-  const [catalogOpen, setCatalogOpen] = useState(false);
   const [modelName, setModelName] = useState("");
   const [modelMessage, setModelMessage] = useState<string>();
   const [dragId, setDragId] = useState<string | null>(null);
   const options = field?.options ?? [];
   const visibleModels = options.filter((option) => option.enabled !== false);
   const customizations = extraFields.filter((entry) => entry.key !== PRODUCT_MODEL_KEYS[product] && entry.type !== "info");
-  const category = categories.find((entry) => CATALOG_LEGACY_FIELD_MAP[entry.slug]?.fieldKey === PRODUCT_MODEL_KEYS[product]);
   const visible = visibleModels.length > 0;
 
   function startSafe(fn: () => Promise<void>) {
@@ -688,13 +712,8 @@ function ProductConfigCard({
               </div>
             ))}
           </div>
-          {canManage && field ? (
+          {canManage && field && showModelEditor ? (
             <div className="grid gap-2 rounded-2xl border border-dashed border-[var(--border)] p-3">
-              {audience && category ? (
-                <Button type="button" size="sm" onClick={() => setCatalogOpen(true)}>
-                  + إضافة منتج من الكتالوج
-                </Button>
-              ) : null}
               <form
                 className="grid gap-2 sm:grid-cols-[1fr_auto]"
                 onSubmit={(event) => {
@@ -750,21 +769,6 @@ function ProductConfigCard({
             ))}
           </ul>
         </div>
-      ) : null}
-
-      {catalogOpen && audience && category ? (
-        <FormProductAssignModal
-          formId={formId}
-          products={products}
-          categories={categories}
-          definition={definition}
-          audience={audience}
-          lockedCategoryId={category.id}
-          onClose={() => {
-            setCatalogOpen(false);
-            onRefresh();
-          }}
-        />
       ) : null}
     </Card>
   );

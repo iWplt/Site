@@ -39,7 +39,7 @@ export function batchWorkspaceItems(input: { batchId: string; formId?: string; c
     { href: `/admin/batches/${input.batchId}`, label: "الدفعة", current: input.current === "batch" },
     { href: formHref, label: "النموذج", current: input.current === "form" },
     { href: input.formId ? `${formHref}?tab=outfits` : "/admin/forms", label: "الأزياء", current: input.current === "outfits" },
-    { href: input.formId ? `${formHref}?tab=products` : "/admin/products", label: "المنتجات", current: input.current === "products" },
+    { href: input.formId ? `${formHref}?tab=products` : "/admin/forms", label: "المنتجات", current: input.current === "products" },
     { href: `/admin/batches/${input.batchId}/orders`, label: "الطلبات", current: input.current === "orders" }
   ];
 }

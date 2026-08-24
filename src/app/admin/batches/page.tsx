@@ -22,7 +22,7 @@ export default async function BatchesPage() {
           <p className="text-sm font-bold text-[var(--gold)]">النماذج والمنتجات</p>
           <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الدفعات</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)]">
-            من هنا تُدار الدفعة، نموذجها، الزي والمنتجات، ثم الطلبات. الأرشفة تخفي الدفعة دون حذف الحجوزات السابقة.
+            من هنا تُدار الدفعة وطلابها. المنتجات والأزياء تُدار من النموذج المرتبط، والكتالوج العام يبقى مصدر المنتجات.
           </p>
         </div>
         {canManage ? <LinkButton href="/admin/batches/new">إنشاء دفعة جديدة</LinkButton> : null}
@@ -68,8 +68,11 @@ export default async function BatchesPage() {
                   <LinkButton href={`/admin/forms/${batch.form.id}`} variant="secondary" size="sm">
                     النموذج
                   </LinkButton>
+                  <LinkButton href={`/admin/forms/${batch.form.id}?tab=products`} variant="secondary" size="sm">
+                    منتجات النموذج
+                  </LinkButton>
                   <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary" size="sm">
-                    الزي والمنتجات
+                    الأزياء
                   </LinkButton>
                 </>
               ) : (
@@ -77,9 +80,6 @@ export default async function BatchesPage() {
                   النماذج
                 </LinkButton>
               )}
-              <LinkButton href="/admin/products" variant="secondary" size="sm">
-                المنتجات المتاحة
-              </LinkButton>
               {canManage ? (
                 <ArchiveConfirmButton
                   label="أرشفة الدفعة"

@@ -180,6 +180,27 @@ test("architecture maps outfit images onto the student outfit field", () => {
   assert.equal(field?.options?.find((option) => option.id === "royal")?.imageUrl, "/warka/royal.webp");
 });
 
+test("sanitize restores missing full-outfit cores without dropping stored outfit data", () => {
+  const config = sanitizeOutfitConfig({
+    fullOutfits: [
+      {
+        id: "broken",
+        name: "ناقص",
+        enabled: true,
+        productOrder: ["robe"],
+        imagePath: "form/outfits/broken/cover/reference.webp"
+      }
+    ],
+    singleItemEnabled: true,
+    singleItemProducts: ["sash"],
+    productOrder: ["cap"]
+  });
+  assert.deepEqual(config.fullOutfits[0]?.productOrder, ["robe", "sash", "cap"]);
+  assert.equal(config.fullOutfits[0]?.imagePath, "form/outfits/broken/cover/reference.webp");
+  assert.deepEqual(config.productOrder, ["cap", "robe", "sash"]);
+  assert.deepEqual(config.singleItemProducts, ["sash"]);
+});
+
 test("outfit product images appear only for the selected full outfit", () => {
   const definition: FormDefinition = {
     ...defaultWarkaFormDefinition,

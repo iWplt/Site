@@ -50,7 +50,7 @@ export default async function FormManagePage({
 
   let products: CatalogProduct[] = [];
   let categories: ProductCategory[] = [];
-  if (tab === "products" || tab === "outfits" || tab === "customizations") {
+  if (tab === "products") {
     try {
       [products, categories] = await Promise.all([listCatalogProducts({ resolveImages: false }), listProductCategories()]);
     } catch {
@@ -147,9 +147,6 @@ export default async function FormManagePage({
           formId={form.id}
           definition={form.definition}
           canManage={canManage}
-          products={products}
-          categories={categories}
-          audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
           focus="outfits"
         />
       ) : null}
@@ -160,9 +157,6 @@ export default async function FormManagePage({
             formId={form.id}
             definition={form.definition}
             canManage={canManage}
-            products={products}
-            categories={categories}
-            audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
             focus="customizations"
           />
           {canManage ? <FormUploadSettings formId={form.id} fields={uploadFieldsFromDefinition(form.definition)} /> : null}
@@ -170,14 +164,28 @@ export default async function FormManagePage({
       ) : null}
 
       {tab === "products" ? (
-        <FormProductsPanel
-          formId={form.id}
-          definition={form.definition}
-          products={products}
-          categories={categories}
-          audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
-          canManage={canManage}
-        />
+        <div className="grid gap-4">
+          <Card>
+            <h2 className="text-xl font-black text-[var(--olive-dark)]">منتجات هذا النموذج</h2>
+            <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
+              النموذج هو المصدر الوحيد للمنتجات الظاهرة للطلاب. الأزياء إعدادات تستخدم هذه المنتجات، ولا تُدار المنتجات من شاشة الدفعة.
+            </p>
+          </Card>
+          <FormProductsPanel
+            formId={form.id}
+            definition={form.definition}
+            products={products}
+            categories={categories}
+            audience={{ formId: form.id, formType: form.type, batchId: form.batch_id }}
+            canManage={canManage}
+          />
+          <FormOutfitWorkspace
+            formId={form.id}
+            definition={form.definition}
+            canManage={canManage}
+            focus="products"
+          />
+        </div>
       ) : null}
 
       {tab === "preview" ? (
