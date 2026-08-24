@@ -609,7 +609,7 @@ export function createBatchRecord(db: LocalDatabase, input: CreateBatchInput, ac
       sections: defaultWarkaFormDefinition.sections.map((section) => ({
         ...section,
         fields: section.fields.map((field) => {
-          if (["robe_addition_image", "sash_back_image", "year_side_image", "cap_side_image", "cap_top_image"].includes(field.key)) {
+          if (["robe_addition_image", "sash_back_image", "year_side_image", "cap_side_image", "cap_top_image", "robe_color_images", "sash_color_images", "cap_color_images"].includes(field.key)) {
             return { ...field, uploadMode: "multiple" as const, maxFiles: 5, maxSizeMb: 8 };
           }
           return field;

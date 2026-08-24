@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { duplicateFormAction, setFormStatusAction } from "@/app/actions";
 import { BatchUniformForm } from "@/components/batch-uniform-form";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { FormOutfitWorkspace } from "@/components/form-outfit-workspace";
 import { FormFieldsManager } from "@/components/form-fields-manager";
 import { FormGeneralSettings } from "@/components/form-general-settings";
 import { FormProductsPanel } from "@/components/form-products-panel";
@@ -125,6 +126,8 @@ export default async function FormManagePage({
           </Card>
         )
       ) : null}
+
+      {tab === "outfits" ? <FormOutfitWorkspace formId={form.id} definition={form.definition} canManage={canManage} /> : null}
 
       {tab === "fields" ? <FormFieldsManager formId={form.id} definition={form.definition} canManage={canManage} /> : null}
 

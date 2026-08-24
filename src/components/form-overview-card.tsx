@@ -67,6 +67,9 @@ export function FormOverviewCard({
         <LinkButton href={href} prefetch className="min-h-11 px-4 py-2">
           إدارة النموذج
         </LinkButton>
+        <LinkButton href={`${href}?tab=outfits`} prefetch variant="secondary" className="min-h-11 px-4 py-2">
+          الزي والمنتجات
+        </LinkButton>
         {canManage ? (
           <>
             <form

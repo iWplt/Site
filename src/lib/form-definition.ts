@@ -48,9 +48,23 @@ const imageUploadDefaults: Pick<FormField, "accept" | "maxSizeMb"> = {
 
 export const defaultWarkaFormDefinition: FormDefinition = {
   id: "warka-default-graduation-form",
-  version: 2,
+  version: 3,
   name: "بطاقة حجز WARKA الافتراضية",
   type: "BATCH",
+  outfitConfig: {
+    fullOutfits: [
+      {
+        id: "mix",
+        name: "زي مكس",
+        description: "روب + وشاح + قبعة مع كامل خيارات التخصيص.",
+        enabled: true,
+        productOrder: ["robe", "sash", "cap"]
+      }
+    ],
+    singleItemEnabled: true,
+    singleItemProducts: ["robe", "sash", "cap"],
+    productOrder: ["robe", "sash", "cap"]
+  },
   sections: [
     {
       id: "student",
@@ -91,7 +105,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           defaultValue: "full_set",
           options: [
             { id: "full-set", label: "زي كامل", value: "full_set", description: "روب + وشاح + قبعة." },
-            { id: "single-pieces", label: "قطع منفردة", value: "single_pieces", description: "طلب قطعة أو أكثر حسب الاختيار." }
+            { id: "single-pieces", label: "حجز مفرد", value: "single_pieces", description: "طلب قطعة أو أكثر حسب الاختيار." }
           ]
         }
       ]
@@ -109,14 +123,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           showOptionImages: true,
           options: robeOptions
-        }
-      ]
-    },
-    {
-      id: "robe_additions",
-      title: "إضافات الروب",
-      description: "إضافات اختيارية على الردن، مع تصميم الطالب إن وُجدت إضافة.",
-      fields: [
+        },
         {
           id: "robe_addition",
           key: "robe_addition",
@@ -148,7 +155,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
     {
       id: "sash",
       title: "الوشاح",
-      description: "اختر نوع الوشاح من الصور المرجعية.",
+      description: "موديل الوشاح وتطريزه وتصميم الطالب واللون والملاحظات.",
       fields: [
         {
           id: "sash_type",
@@ -158,14 +165,7 @@ export const defaultWarkaFormDefinition: FormDefinition = {
           required: true,
           showOptionImages: true,
           options: sashOptions
-        }
-      ]
-    },
-    {
-      id: "sash_embroidery",
-      title: "تطريز الوشاح",
-      description: "نصوص وتفاصيل التطريز وتصاميم الطالب المرتبطة بالوشاح.",
-      fields: [
+        },
         {
           id: "sash_back_text",
           key: "sash_back_text",
@@ -271,9 +271,7 @@ export const defaultWizardSteps = [
   "بيانات الطالب",
   "نوع الحجز",
   "الروب",
-  "إضافات الروب",
   "الوشاح",
-  "تطريز الوشاح",
   "القبعة",
   "مراجعة الطلب"
 ];
@@ -302,6 +300,12 @@ export function findSelectedOption(options: FormOption[] | undefined, value: unk
 
 export function optionLabel(options: FormOption[] | undefined, value: unknown): string {
   if (typeof value === "boolean") return value ? "نعم" : "لا";
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => optionLabel(options, entry))
+      .filter(Boolean)
+      .join("، ");
+  }
   const selected = findSelectedOption(options, value);
   if (selected) return selected.label;
   if (value === undefined || value === null || value === "") return "";
@@ -315,7 +319,10 @@ export function fieldIsVisible(field: FormField, answers: Record<string, unknown
     if (rule.operator === "truthy") return Boolean(current);
     if (rule.operator === "equals") return current === rule.value;
     if (rule.operator === "not_equals") return current !== rule.value;
-    if (rule.operator === "includes") return String(current ?? "").includes(String(rule.value));
+    if (rule.operator === "includes") {
+      if (Array.isArray(current)) return current.map(String).includes(String(rule.value ?? ""));
+      return String(current ?? "").includes(String(rule.value ?? ""));
+    }
     return true;
   });
 }

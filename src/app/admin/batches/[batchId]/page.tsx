@@ -81,6 +81,9 @@ export default async function BatchDetailPage({
           <p className="mt-2">{batch.form?.name ?? "لا يوجد نموذج مرتبط"}</p>
           {batch.form ? (
             <div className="mt-4 flex flex-wrap gap-2">
+              <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`}>
+                إدارة الزي والمنتجات
+              </LinkButton>
               <LinkButton href={`/f/${batch.form.slug}`} variant="secondary">
                 فتح الرابط العام
               </LinkButton>

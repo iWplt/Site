@@ -7,12 +7,14 @@ import type { FormDefinition } from "./types.ts";
 test("default definition places customizations under parent product sections", () => {
   const def = defaultWarkaFormDefinition;
   const bySection = Object.fromEntries(def.sections.map((section) => [section.id, section.fields.map((field) => field.key)]));
-  assert.ok(bySection.robe_additions.includes("robe_addition_image"));
-  assert.ok(bySection.sash_embroidery.includes("sash_back_image"));
-  assert.ok(bySection.sash_embroidery.includes("year_side_image"));
+  assert.ok(bySection.robe.includes("robe_addition_image"));
+  assert.ok(bySection.sash.includes("sash_back_image"));
+  assert.ok(bySection.sash.includes("year_side_image"));
   assert.ok(bySection.cap.includes("cap_side_image"));
   assert.ok(bySection.cap.includes("cap_top_image"));
   assert.equal(bySection.uploads, undefined);
+  assert.equal(bySection.robe_additions, undefined);
+  assert.equal(bySection.sash_embroidery, undefined);
 });
 
 test("normalize relocates legacy global uploads into parent sections", () => {

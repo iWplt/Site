@@ -10,6 +10,7 @@ import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
+import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
 import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -47,7 +48,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
         if (field.defaultValue !== undefined) initial[field.key] = field.defaultValue;
       })
     );
-    return initial;
+    return resolveOutfitAnswers(form.definition, initial);
   });
   const [files, setFiles] = useState<Record<string, UploadedFile[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -74,7 +75,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
   );
 
   function setAnswer(key: string, value: unknown) {
-    setAnswers((current) => ({ ...current, [key]: value }));
+    setAnswers((current) => resolveOutfitAnswers(form.definition, { ...current, [key]: value }));
     setErrors((current) => {
       const next = { ...current };
       delete next[key];
@@ -92,8 +93,20 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress 
         if (uploadError) nextErrors[field.key] = uploadError;
         continue;
       }
-      if (field.required && (value === undefined || value === null || value === "")) {
+      if (field.type === "checkbox") {
+        if (field.required && !asStringList(value).length) {
+          nextErrors[field.key] = "يرجى اختيار عنصر واحد على الأقل.";
+        }
+        continue;
+      }
+      if (field.required && isBlankValue(value)) {
         nextErrors[field.key] = "هذا الحقل مطلوب.";
+      }
+      if (field.type === "number" && !isBlankValue(value)) {
+        const amount = Number(value);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          nextErrors[field.key] = "يرجى إدخال رقم صحيح.";
+        }
       }
       if (field.type === "phone" && value && !/^(\+?964|0)?7[0-9\s-]{8,12}$/.test(String(value))) {
         nextErrors[field.key] = "يرجى إدخال رقم هاتف عراقي صحيح.";
@@ -278,16 +291,20 @@ function FieldRenderer({
       ) : null}
       {field.type === "read_only" ? <div className="rounded-2xl border border-[var(--border)] bg-[#3f472d0d] px-4 py-3 text-base font-bold">{String(value ?? "")}</div> : null}
       {field.type === "short_text" || field.type === "phone" || field.type === "number" ? (
-        <TextInput
-          type={field.type === "number" ? "number" : "text"}
-          inputMode={field.type === "phone" ? "tel" : undefined}
-          dir={field.type === "phone" ? "ltr" : undefined}
-          placeholder={field.placeholder}
-          value={String(value ?? "")}
-          disabled={field.locked}
-          className="min-h-12 text-base"
-          onChange={(event) => onChange(event.target.value)}
-        />
+        <div className={field.key === "robe_height" ? "flex items-center gap-2" : undefined}>
+          <TextInput
+            type={field.type === "number" ? "number" : "text"}
+            inputMode={field.type === "phone" ? "tel" : field.type === "number" ? "decimal" : undefined}
+            dir={field.type === "phone" || field.type === "number" ? "ltr" : undefined}
+            placeholder={field.placeholder}
+            value={String(value ?? "")}
+            disabled={field.locked}
+            min={field.type === "number" ? 1 : undefined}
+            className="min-h-12 text-base"
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {field.key === "robe_height" ? <span className="shrink-0 text-sm font-bold text-[var(--muted)]">سم</span> : null}
+        </div>
       ) : null}
       {field.type === "long_text" ? (
         <TextArea
@@ -297,6 +314,43 @@ function FieldRenderer({
           className="min-h-32 text-base"
           onChange={(event) => onChange(event.target.value)}
         />
+      ) : null}
+      {field.type === "checkbox" && field.options ? (
+        <div className="grid gap-3">
+          {field.options
+            .filter((option) => option.enabled !== false)
+            .map((option) => {
+              const selected = asStringList(value).includes(option.value);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    const current = asStringList(value);
+                    onChange(selected ? current.filter((entry) => entry !== option.value) : [...current, option.value]);
+                  }}
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
+                    selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70"
+                  )}
+                >
+                  <span>
+                    <span className="block text-base font-black text-[var(--olive-dark)]">{option.label}</span>
+                    {option.description ? <span className="mt-1 block text-sm text-[var(--muted)]">{option.description}</span> : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2",
+                      selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
+                    )}
+                  >
+                    {selected ? <Check size={12} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+        </div>
       ) : null}
       {field.type === "boolean" ? (
         <div className="grid grid-cols-2 gap-3">

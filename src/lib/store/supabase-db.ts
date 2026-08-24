@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireSupabaseSecretsForWrites } from "@/lib/env";
 import { assertOwnedBookingPath, extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
-import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
+import { normalizeLiveFormDefinition } from "@/lib/form-live";
 import {
   accessCodeFingerprint,
   decryptAccessCode,
@@ -30,6 +30,8 @@ import {
   enforceUniformAnswers,
   type UniformSelectionMap
 } from "@/lib/form-uniform";
+import { resolveOutfitAnswers, applyOutfitArchitecture, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import type { OutfitConfig } from "@/lib/types";
 import { withCatalogDefinition } from "@/lib/store/catalog-store";
 import { toFormSummary } from "@/lib/form-summary";
 import type {
@@ -85,7 +87,10 @@ const MULTI_UPLOAD_FIELD_KEYS = [
   "sash_back_image",
   "year_side_image",
   "cap_side_image",
-  "cap_top_image"
+  "cap_top_image",
+  "robe_color_images",
+  "sash_color_images",
+  "cap_color_images"
 ];
 
 /* -------------------------------------------------------------------------------------------- */
@@ -224,7 +229,7 @@ function decryptCodeSafe(ciphertext: string | null | undefined): string | undefi
 }
 
 function buildBatchDefaultDefinition(): FormDefinition {
-  return normalizeFormCustomizationGrouping({
+  return normalizeLiveFormDefinition({
     ...defaultWarkaFormDefinition,
     sections: defaultWarkaFormDefinition.sections.map((section) => ({
       ...section,
@@ -293,7 +298,7 @@ function mapFormRow(row: BookingFormRow): BookingFormRecord {
     closing_date: row.closing_date ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    definition: normalizeFormCustomizationGrouping(rawDefinition)
+    definition: normalizeLiveFormDefinition(rawDefinition)
   };
 }
 
@@ -1108,7 +1113,10 @@ export async function sbSubmitBooking(
   const formRecord = await resolveFormRowImages(formRow as BookingFormRow);
   const cataloged = await withCatalogDefinition(formRecord);
   const definition = applyUniformToDefinition(cataloged.definition, fixed);
-  const finalAnswers = enforceUniformAnswers({ ...answers, student_name: session.studentName }, fixed);
+  const finalAnswers = resolveOutfitAnswers(
+    definition,
+    enforceUniformAnswers({ ...answers, student_name: session.studentName }, fixed)
+  );
   const validation = validateDynamicAnswers(definition, finalAnswers, files);
   if (!validation.valid) return { ok: false, error: "يرجى مراجعة الحقول المطلوبة." };
 
@@ -2123,9 +2131,39 @@ export async function sbUpdateFormFieldMeta(formId: string, fieldKey: string, pa
   requireSupabaseSecretsForWrites();
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const nextDefinition = patchFieldInDefinition(definition, fieldKey, patch);
 
-  let found = false;
+  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث إعدادات الحقل."));
+  await sbAudit(admin, "FORM_FIELD_META_UPDATED", "booking_form", formId, undefined, { fieldKey, patch });
+}
+
+export async function sbUpdateFormOutfitConfig(formId: string, config: OutfitConfig) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
   const nextDefinition: FormDefinition = {
+    ...definition,
+    outfitConfig: sanitizeOutfitConfig(config)
+  };
+  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ إعدادات الزي."));
+  await sbAudit(admin, "FORM_OUTFIT_CONFIG_UPDATED", "booking_form", formId);
+}
+
+export async function sbReorderFormOptions(formId: string, fieldKey: string, orderedIds: string[]) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const nextDefinition = reorderOptionsInDefinition(definition, fieldKey, orderedIds);
+  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر إعادة ترتيب الخيارات."));
+  await sbAudit(admin, "FORM_OPTIONS_REORDERED", "booking_form", formId, undefined, { fieldKey });
+}
+
+function patchFieldInDefinition(definition: FormDefinition, fieldKey: string, patch: FormFieldMetaPatch): FormDefinition {
+  let found = false;
+  const next: FormDefinition = {
     ...definition,
     sections: definition.sections.map((section) => ({
       ...section,
@@ -2136,11 +2174,42 @@ export async function sbUpdateFormFieldMeta(formId: string, fieldKey: string, pa
       })
     }))
   };
-  if (!found) throw new Error("الحقل غير موجود.");
+  if (found) return next;
 
-  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
-  if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث إعدادات الحقل."));
-  await sbAudit(admin, "FORM_FIELD_META_UPDATED", "booking_form", formId, undefined, { fieldKey, patch });
+  const live = applyOutfitArchitecture(definition);
+  const liveSection = live.sections.find((section) => section.fields.some((field) => field.key === fieldKey));
+  const liveField = liveSection?.fields.find((field) => field.key === fieldKey);
+  if (!liveField || !liveSection) throw new Error("الحقل غير موجود.");
+  const patched = { ...liveField, ...patch };
+  if (next.sections.some((section) => section.id === liveSection.id)) {
+    return {
+      ...next,
+      sections: next.sections.map((section) =>
+        section.id === liveSection.id ? { ...section, fields: [...section.fields, patched] } : section
+      )
+    };
+  }
+  return { ...next, sections: [...next.sections, { ...liveSection, fields: [patched] }] };
+}
+
+function reorderOptionsInDefinition(definition: FormDefinition, fieldKey: string, orderedIds: string[]): FormDefinition {
+  let found = false;
+  const next = {
+    ...definition,
+    sections: definition.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        if (field.key !== fieldKey || !field.options?.length) return field;
+        found = true;
+        const byId = new Map(field.options.map((option) => [option.id, option]));
+        const reordered = orderedIds.map((id) => byId.get(id)).filter((option): option is FormOption => Boolean(option));
+        const leftovers = field.options.filter((option) => !orderedIds.includes(option.id));
+        return { ...field, options: [...reordered, ...leftovers] };
+      })
+    }))
+  };
+  if (!found) throw new Error("الحقل غير موجود.");
+  return next;
 }
 
 export async function sbDuplicateForm(formId: string): Promise<BookingFormRecord> {

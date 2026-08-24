@@ -26,6 +26,8 @@ import { answersWithSnapshot, buildOrderSnapshot } from "@/lib/order-snapshot";
 import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/lib/validation";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { mergeCatalogIntoDefinition, filterAvailableProducts } from "@/lib/product-catalog";
+import { applyOutfitArchitecture, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
 import { deleteOptionImage, storeOptionImage } from "@/lib/storage/uploads";
 import {
@@ -54,6 +56,8 @@ import {
   sbUpdateFormFieldMeta,
   sbUpdateFormGeneral,
   sbUpdateFormOption,
+  sbUpdateFormOutfitConfig,
+  sbReorderFormOptions,
   sbUpdateFormUploadSettings,
   sbUpdateOrderStatus,
   sbUpdateStudent,
@@ -67,7 +71,7 @@ import {
   clientRateBucket,
   guardAccessCodeAttempt
 } from "@/lib/access-code-rate-limit";
-import type { AccessCodeStatus, Batch, BatchStatus, FormOption, FormStatus, OrderStatus } from "@/lib/types";
+import type { AccessCodeStatus, Batch, BatchStatus, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
@@ -330,16 +334,18 @@ export async function submitBookingAction(input: unknown) {
       );
       if (existing) throw new Error("تم استخدام رمز الحجز مسبقاً وإرسال الطلب بنجاح.");
 
-      const answers = { ...parsed.data.answers, student_name: student.full_name };
-      const definition = mergeCatalogIntoDefinition(
-        form.definition ?? defaultWarkaFormDefinition,
-        filterAvailableProducts(db.products ?? [], {
-          formId: form.id,
-          formType: form.type,
-          batchId: form.batch_id ?? session.batchId ?? null
-        }),
-        db.product_categories ?? []
+      const definition = applyOutfitArchitecture(
+        mergeCatalogIntoDefinition(
+          normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition),
+          filterAvailableProducts(db.products ?? [], {
+            formId: form.id,
+            formType: form.type,
+            batchId: form.batch_id ?? session.batchId ?? null
+          }),
+          db.product_categories ?? []
+        )
       );
+      const answers = resolveOutfitAnswers(definition, { ...parsed.data.answers, student_name: student.full_name });
       const validation = validateDynamicAnswers(definition, answers, parsed.data.files);
       if (!validation.valid) {
         throw new Error("يرجى مراجعة الحقول المطلوبة.");
@@ -1027,23 +1033,91 @@ export async function updateFormFieldMetaAction(
     mutateDb((db) => {
       const form = db.forms.find((entry) => entry.id === formId);
       if (!form) throw new Error("النموذج غير موجود.");
+      form.definition = patchLocalFieldMeta(form.definition, fieldKey, patch);
+      audit(db, "FORM_FIELD_META_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, patch });
+    });
+  }
+  revalidateAdmin();
+}
+
+export async function updateFormOutfitConfigAction(formId: string, raw: OutfitConfig) {
+  await requireUser(["OWNER"]);
+  const config = sanitizeOutfitConfig(raw);
+  if (assertPersistenceAllowed() === "supabase") {
+    await sbUpdateFormOutfitConfig(formId, config);
+  } else {
+    mutateDb((db) => {
+      const form = db.forms.find((entry) => entry.id === formId);
+      if (!form) throw new Error("النموذج غير موجود.");
+      form.definition = { ...form.definition, outfitConfig: config };
+      audit(db, "FORM_OUTFIT_CONFIG_UPDATED", "booking_form", formId, { label: "owner" }, { config });
+    });
+  }
+  revalidateAdmin();
+}
+
+export async function reorderFormOptionsAction(formId: string, fieldKey: string, orderedIds: string[]) {
+  await requireUser(["OWNER"]);
+  if (assertPersistenceAllowed() === "supabase") {
+    await sbReorderFormOptions(formId, fieldKey, orderedIds);
+  } else {
+    mutateDb((db) => {
+      const form = db.forms.find((entry) => entry.id === formId);
+      if (!form) throw new Error("النموذج غير موجود.");
       let found = false;
       form.definition = {
         ...form.definition,
         sections: form.definition.sections.map((section) => ({
           ...section,
           fields: section.fields.map((field) => {
-            if (field.key !== fieldKey) return field;
+            if (field.key !== fieldKey || !field.options?.length) return field;
             found = true;
-            return { ...field, ...patch };
+            const byId = new Map(field.options.map((option) => [option.id, option]));
+            const reordered = orderedIds.map((id) => byId.get(id)).filter((option): option is FormOption => Boolean(option));
+            const leftovers = field.options.filter((option) => !orderedIds.includes(option.id));
+            return { ...field, options: [...reordered, ...leftovers] };
           })
         }))
       };
       if (!found) throw new Error("الحقل غير موجود.");
-      audit(db, "FORM_FIELD_META_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, patch });
+      audit(db, "FORM_OPTIONS_REORDERED", "booking_form", formId, { label: "owner" }, { fieldKey });
     });
   }
   revalidateAdmin();
+}
+
+function patchLocalFieldMeta(
+  definition: FormDefinition,
+  fieldKey: string,
+  patch: { showOptionImages?: boolean; uploadMode?: "single" | "multiple"; maxFiles?: number; required?: boolean }
+): FormDefinition {
+  let found = false;
+  const next: FormDefinition = {
+    ...definition,
+    sections: definition.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        if (field.key !== fieldKey) return field;
+        found = true;
+        return { ...field, ...patch };
+      })
+    }))
+  };
+  if (found) return next;
+  const live = applyOutfitArchitecture(definition);
+  const liveSection = live.sections.find((section) => section.fields.some((field) => field.key === fieldKey));
+  const liveField = liveSection?.fields.find((field) => field.key === fieldKey);
+  if (!liveField || !liveSection) throw new Error("الحقل غير موجود.");
+  const patched = { ...liveField, ...patch };
+  if (next.sections.some((section) => section.id === liveSection.id)) {
+    return {
+      ...next,
+      sections: next.sections.map((section) =>
+        section.id === liveSection.id ? { ...section, fields: [...section.fields, patched] } : section
+      )
+    };
+  }
+  return { ...next, sections: [...next.sections, { ...liveSection, fields: [patched] }] };
 }
 
 export async function uploadFormOptionImageAction(formData: FormData) {

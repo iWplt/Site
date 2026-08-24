@@ -123,7 +123,9 @@ export function mergeCatalogIntoDefinition(
     const options = grouped.map((product) => productToFormOption(product, category));
     const mapped = CATALOG_LEGACY_FIELD_MAP[category.slug];
     if (mapped) {
-      const section = sections.find((entry) => entry.id === mapped.sectionId);
+      const section =
+        sections.find((entry) => entry.id === mapped.sectionId) ??
+        sections.find((entry) => entry.fields.some((field) => field.key === mapped.fieldKey));
       const field = section?.fields.find((entry) => entry.key === mapped.fieldKey);
       if (field) {
         const existing = optionValues(field.options);

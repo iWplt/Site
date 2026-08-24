@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fieldIsVisible, flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
+import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
 import { requiredUploadError } from "@/lib/required-upload";
 import type { FormDefinition } from "@/lib/types";
 
@@ -35,11 +36,12 @@ export function validateDynamicAnswers(
   answers: Record<string, unknown>,
   files?: Record<string, unknown[]>
 ) {
+  const resolved = resolveOutfitAnswers(definition, answers);
   const errors: Record<string, string> = {};
 
   for (const field of flattenFields(definition.sections)) {
     if (field.type === "info" || field.type === "section") continue;
-    if (!fieldIsVisible(field, answers)) continue;
+    if (!fieldIsVisible(field, resolved)) continue;
 
     if (["image_upload", "file_upload"].includes(field.type)) {
       const uploadError = requiredUploadError(files?.[field.key], field.required);
@@ -47,16 +49,31 @@ export function validateDynamicAnswers(
       continue;
     }
 
-    const value = answers[field.key] ?? field.defaultValue;
+    const value = resolved[field.key] ?? field.defaultValue;
 
     if (field.locked && field.defaultValue !== undefined && value !== field.defaultValue) {
       errors[field.key] = "هذا الخيار مقفل من إدارة الدفعة ولا يمكن تغييره.";
       continue;
     }
 
-    if (field.required && (value === undefined || value === null || value === "")) {
+    if (field.type === "checkbox") {
+      const selected = asStringList(value);
+      if (field.required && !selected.length) {
+        errors[field.key] = "يرجى اختيار عنصر واحد على الأقل.";
+      }
+      continue;
+    }
+
+    if (field.required && isBlankValue(value)) {
       errors[field.key] = "هذا الحقل مطلوب.";
       continue;
+    }
+
+    if (field.type === "number" && !isBlankValue(value)) {
+      const amount = Number(value);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errors[field.key] = "يرجى إدخال رقم صحيح.";
+      }
     }
 
     if (field.type === "phone" && value) {
@@ -65,7 +82,14 @@ export function validateDynamicAnswers(
     }
 
     if (["radio", "select", "image_choice"].includes(field.type) && value && field.options?.length) {
-      const allowed = new Set(field.options.flatMap((option) => [option.value, ...(option.children?.map((child) => child.value) ?? [])]));
+      const allowed = new Set(
+        field.options
+          .filter((option) => option.enabled !== false)
+          .flatMap((option) => [
+            option.value,
+            ...(option.children?.filter((child) => child.enabled !== false).map((child) => child.value) ?? [])
+          ])
+      );
       if (!allowed.has(String(value))) errors[field.key] = "الخيار المحدد غير متاح.";
     }
   }

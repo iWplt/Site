@@ -42,6 +42,24 @@ export type ConditionalRule = {
   value?: string | boolean | number;
 };
 
+export type CoreProductId = "robe" | "sash" | "cap";
+
+export type FullOutfit = {
+  id: string;
+  name: string;
+  description?: string;
+  imageUrl?: string;
+  enabled?: boolean;
+  productOrder?: CoreProductId[];
+};
+
+export type OutfitConfig = {
+  fullOutfits: FullOutfit[];
+  singleItemEnabled: boolean;
+  singleItemProducts: CoreProductId[];
+  productOrder: CoreProductId[];
+};
+
 export type FormOption = {
   id: string;
   label: string;
@@ -138,6 +156,7 @@ export type FormDefinition = {
   name: string;
   type: FormType;
   sections: FormSection[];
+  outfitConfig?: OutfitConfig;
 };
 
 export type Batch = {

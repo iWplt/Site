@@ -8,6 +8,7 @@ import {
   mergeCatalogIntoDefinition,
   type CatalogAudience
 } from "@/lib/product-catalog";
+import { applyOutfitArchitecture } from "@/lib/outfit-architecture";
 import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import type {
   BookingFormRecord,
@@ -437,8 +438,8 @@ export async function withCatalogDefinition(form: BookingFormRecord): Promise<Bo
       }),
       listProductCategories()
     ]);
-    return { ...base, definition: mergeCatalogIntoDefinition(base.definition, products, categories) };
+    return { ...base, definition: applyOutfitArchitecture(mergeCatalogIntoDefinition(base.definition, products, categories)) };
   } catch {
-    return base;
+    return { ...base, definition: applyOutfitArchitecture(base.definition) };
   }
 }

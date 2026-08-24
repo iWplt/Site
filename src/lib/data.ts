@@ -3,7 +3,7 @@ import "server-only";
 import type { AppUser } from "@/lib/auth";
 import { canAccessBatch } from "@/lib/auth";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
-import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
+import { normalizeLiveFormDefinition } from "@/lib/form-live";
 import { assertPersistenceAllowed, getPersistenceMode } from "@/lib/persistence";
 import {
   getBatchStats,
@@ -143,7 +143,7 @@ export async function getAdminForm(
   }
   return {
     ...form,
-    definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
+    definition: normalizeLiveFormDefinition(form.definition ?? defaultWarkaFormDefinition)
   };
 }
 
@@ -159,7 +159,7 @@ export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {
     })
     .map((form) => ({
       ...form,
-      definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
+      definition: normalizeLiveFormDefinition(form.definition ?? defaultWarkaFormDefinition)
     }));
 }
 
@@ -171,7 +171,7 @@ export async function getPublicForm(slug: string, options?: { resolveImages?: bo
   if (!form) return null;
   return {
     ...form,
-    definition: normalizeFormCustomizationGrouping(form.definition ?? defaultWarkaFormDefinition)
+    definition: normalizeLiveFormDefinition(form.definition ?? defaultWarkaFormDefinition)
   };
 }
 
