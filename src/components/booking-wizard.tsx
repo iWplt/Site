@@ -8,10 +8,20 @@ import { PublicVisualHero, StudentGalleryStrip } from "@/components/public-visua
 import { OptimizedThumb } from "@/components/optimized-thumb";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
-import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
-import { asStringList, CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, isBlankValue, isSingleItemBooking, outfitProductDisplayImage, resolveOutfitAnswers, resolveSelectedOutfit } from "@/lib/outfit-architecture";
-import { formatProductPrice, optionVisibleForBooking } from "@/lib/product-catalog";
+import {
+  asStringList,
+  CORE_PRODUCT_IDS,
+  CORE_PRODUCT_LABELS,
+  fieldVisibleForBookingContext,
+  isBlankValue,
+  isSingleItemBooking,
+  optionsForBookingContext,
+  outfitProductDisplayImage,
+  resolveOutfitAnswers,
+  resolveSelectedOutfit
+} from "@/lib/outfit-architecture";
+import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
 import type { BookingFormRecord, FormField } from "@/lib/types";
@@ -59,9 +69,9 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   const singleItem = isSingleItemBooking(form.definition, answers);
   const sections = useMemo(() => {
     return form.definition.sections.filter((section) =>
-      section.fields.some((field) => fieldIsVisible(field, answers))
+      section.fields.some((field) => fieldVisibleForBookingContext(field, form.definition, answers))
     );
-  }, [answers, form.definition.sections]);
+  }, [answers, form.definition]);
 
   const activeStep = Math.min(step, sections.length);
   const isReview = activeStep >= sections.length;
@@ -77,13 +87,13 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
 
   const visibleFields = useMemo(
     () =>
-      (sections[activeStep]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? []).filter((field) => {
+      (sections[activeStep]?.fields.filter((field) => fieldVisibleForBookingContext(field, form.definition, answers)) ?? []).filter((field) => {
         if (field.key === "selected_products" && !singleItem) return false;
         if (!["radio", "select", "image_choice", "checkbox"].includes(field.type) || !field.options?.length) return true;
-        const visibleOptions = field.options.filter((option) => optionVisibleForBooking(option, answers.booking_type));
+        const visibleOptions = optionsForBookingContext(field, form.definition, answers);
         return visibleOptions.length > 0 || Boolean(field.required);
       }),
-    [answers, sections, activeStep, singleItem]
+    [answers, sections, activeStep, singleItem, form.definition]
   );
 
   function setAnswer(key: string, value: unknown) {
@@ -118,6 +128,13 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
       }
       if (field.required && isBlankValue(value)) {
         nextErrors[field.key] = "هذا الحقل مطلوب.";
+      }
+      if (["radio", "select", "image_choice"].includes(field.type) && !isBlankValue(value)) {
+        const allowed = optionsForBookingContext(field, form.definition, answers);
+        const values = new Set(
+          allowed.flatMap((option) => [option.value, ...(option.children?.map((child) => child.value) ?? [])])
+        );
+        if (!values.has(String(value))) nextErrors[field.key] = "الخيار المحدد غير متاح لهذا الزي.";
       }
       if (field.type === "number" && !isBlankValue(value)) {
         const amount = Number(value);
@@ -225,10 +242,10 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
               <FieldRenderer
                 key={field.id}
                 field={field}
+                contextOptions={optionsForBookingContext(field, form.definition, answers)}
                 value={answers[field.key]}
                 files={files[field.key] ?? []}
                 error={errors[field.key]}
-                bookingType={answers.booking_type}
                 productSelectionLocked={!singleItem && field.key === "selected_products"}
                 prioritizeImages={fieldIndex === 0}
                 onChange={(value) => setAnswer(field.key, value)}
@@ -319,26 +336,27 @@ function AssignedOutfitProducts({ answers }: { answers: Record<string, unknown> 
 
 function FieldRenderer({
   field,
+  contextOptions,
   value,
   files,
   error,
-  bookingType,
   productSelectionLocked = false,
   prioritizeImages = false,
   onChange,
   onFiles
 }: {
   field: FormField;
+  contextOptions?: FormField["options"];
   value: unknown;
   files: UploadedFile[];
   error?: string;
-  bookingType?: unknown;
   productSelectionLocked?: boolean;
   prioritizeImages?: boolean;
   onChange: (value: unknown) => void;
   onFiles: (files: UploadedFile[]) => void;
 }) {
-  const lockedOption = field.options?.find((option) => option.value === value) ?? field.options?.[0];
+  const choiceOptions = contextOptions ?? field.options;
+  const lockedOption = choiceOptions?.find((option) => option.value === value) ?? choiceOptions?.[0];
   return (
     <div>
       <FieldLabel required={field.required}>{field.label}</FieldLabel>
@@ -378,10 +396,9 @@ function FieldRenderer({
           onChange={(event) => onChange(event.target.value)}
         />
       ) : null}
-      {field.type === "checkbox" && field.options ? (
+      {field.type === "checkbox" && choiceOptions ? (
         <div className="grid gap-3">
-          {field.options
-            .filter((option) => optionVisibleForBooking(option, bookingType))
+          {choiceOptions
             .map((option) => {
               const selected = asStringList(value).includes(option.value);
               const locked = Boolean(field.locked || productSelectionLocked);
@@ -465,15 +482,14 @@ function FieldRenderer({
             <p className="mt-2 text-xs text-[var(--muted)]">محدد من قبل مسؤول الدفعة</p>
           </div>
         </div>
-      ) : ["radio", "select", "image_choice"].includes(field.type) && field.options ? (
+      ) : ["radio", "select", "image_choice"].includes(field.type) && choiceOptions ? (
         <div
           className={cn(
             "grid gap-3",
             field.showOptionImages || field.type === "image_choice" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
           )}
         >
-          {field.options
-            .filter((option) => optionVisibleForBooking(option, bookingType))
+          {choiceOptions
             .flatMap((option, optionIndex) => {
               const optionChildren = (option.children?.length ? option.children : [option]).filter((child) => child.enabled !== false);
               return optionChildren.map((child, childIndex) => {

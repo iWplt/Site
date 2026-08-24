@@ -51,6 +51,14 @@ export type OutfitProductImage = {
   imageUrl?: string;
 };
 
+/** Per-outfit configuration for a Form Product membership. */
+export type OutfitProductSettings = {
+  /** Allowed option values per field key (robe_model, sash_type, robe_addition, etc.). Empty/omitted = all form options. */
+  allowedOptions?: Partial<Record<string, string[]>>;
+  /** Customization field keys hidden for this product inside this outfit. */
+  hiddenFields?: string[];
+};
+
 export type FullOutfit = {
   id: string;
   name: string;
@@ -61,6 +69,8 @@ export type FullOutfit = {
   productOrder?: CoreProductId[];
   /** Outfit-specific images for assigned products. Does not change the global catalog. */
   productImages?: Partial<Record<CoreProductId, OutfitProductImage>>;
+  /** Outfit-specific product membership settings (models, customizations). */
+  productSettings?: Partial<Record<CoreProductId, OutfitProductSettings>>;
 };
 
 export type BookingMode = "full_set" | "single_pieces";

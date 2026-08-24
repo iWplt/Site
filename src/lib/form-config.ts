@@ -4,6 +4,7 @@ import {
   PRODUCT_MODEL_KEYS,
   constrainToEnabledProducts,
   formEnabledCoreProducts,
+  optionsForBookingContext,
   sanitizeOutfitConfig
 } from "./outfit-architecture.ts";
 import type { FormDefinition, FormField, FormOption, FormSection, OutfitConfig } from "./types";
@@ -81,6 +82,24 @@ export function formConfigurationWarnings(definition: FormDefinition): FormConfi
         id: `no-models-${product}`,
         message: `⚠️ ${CORE_PRODUCT_LABELS[product]} ظاهر للطلاب ولكن لا توجد موديلات متاحة.`
       });
+    }
+  }
+
+  for (const outfit of config.fullOutfits) {
+    if (outfit.enabled === false) continue;
+    for (const product of outfit.productOrder ?? []) {
+      const modelField = fieldByKey(definition, PRODUCT_MODEL_KEYS[product]);
+      if (!modelField?.options?.length) continue;
+      const allowed = outfit.productSettings?.[product]?.allowedOptions?.[PRODUCT_MODEL_KEYS[product]];
+      if (!allowed?.length) continue;
+      const previewAnswers = { booking_type: "full_set", full_outfit_id: outfit.id, selected_products: outfit.productOrder };
+      const visible = optionsForBookingContext(modelField, definition, previewAnswers);
+      if (!visible.length) {
+        warnings.push({
+          id: `outfit-no-models-${outfit.id}-${product}`,
+          message: `⚠️ زي «${outfit.name}» لا يعرض أي موديلات متاحة لـ${CORE_PRODUCT_LABELS[product]}.`
+        });
+      }
     }
   }
 

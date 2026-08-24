@@ -3,8 +3,10 @@ import test from "node:test";
 import { defaultWarkaFormDefinition, fieldIsVisible } from "./form-definition.ts";
 import {
   applyOutfitArchitecture,
+  fieldVisibleForBookingContext,
   formEnabledCoreProducts,
   isSingleItemBooking,
+  optionsForBookingContext,
   outfitProductDisplayImage,
   productIsSelected,
   resolveOutfitAnswers,
@@ -343,4 +345,66 @@ test("full outfit subset stays explicit when all form products remain enabled", 
   assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, ["robe"]);
   const answers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "robe-only" });
   assert.deepEqual(answers.selected_products, ["robe"]);
+});
+
+test("full outfit filters models to outfit-specific allowed options", () => {
+  const robeField = defaultWarkaFormDefinition.sections.find((section) => section.id === "robe")?.fields.find((field) => field.key === "robe_model");
+  const modelValues = (robeField?.options ?? []).map((option) => option.value);
+  assert.ok(modelValues.length >= 2);
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "royal",
+          name: "زي ملكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productSettings: {
+            robe: { allowedOptions: { robe_model: [modelValues[0]!] } }
+          }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const fullAnswers = { booking_type: "full_set", full_outfit_id: "royal", selected_products: ["robe", "sash", "cap"] };
+  const robeModel = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_model");
+  assert.ok(robeModel);
+  const fullOptions = optionsForBookingContext(robeModel!, live, fullAnswers);
+  assert.equal(fullOptions.length, 1);
+  assert.equal(fullOptions[0]?.value, modelValues[0]);
+  const singleAnswers = { booking_type: "single_pieces", selected_products: ["robe"] };
+  const singleOptions = optionsForBookingContext(robeModel!, live, singleAnswers);
+  assert.ok(singleOptions.length >= 2);
+});
+
+test("full outfit hides customization fields configured as hidden for the outfit product", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "royal",
+          name: "زي ملكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productSettings: { robe: { hiddenFields: ["robe_notes"] } }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const fullAnswers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "royal" });
+  const notes = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_notes");
+  assert.ok(notes);
+  assert.equal(fieldVisibleForBookingContext(notes!, live, fullAnswers), false);
+  const singleAnswers = resolveOutfitAnswers(live, { booking_type: "single_pieces", selected_products: ["robe"] });
+  assert.equal(fieldVisibleForBookingContext(notes!, live, singleAnswers), true);
 });

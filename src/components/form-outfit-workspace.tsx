@@ -159,6 +159,8 @@ export function FormOutfitWorkspace({
                   formId={formId}
                   outfit={outfit}
                   enabledProducts={enabledProducts}
+                  fieldsByKey={fieldsByKey}
+                  definition={definition}
                   disabled={!canManage || pending}
                   onChange={(patch) => {
                     const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
@@ -447,6 +449,8 @@ function OutfitEditor({
   formId,
   outfit,
   enabledProducts,
+  fieldsByKey,
+  definition,
   disabled,
   onChange,
   onImagesChange,
@@ -455,12 +459,68 @@ function OutfitEditor({
   formId: string;
   outfit: FullOutfit;
   enabledProducts: CoreProductId[];
+  fieldsByKey: Map<string, FormField>;
+  definition: FormDefinition;
   disabled: boolean;
   onChange: (patch: Partial<FullOutfit>) => void;
   onImagesChange: (patch: Partial<FullOutfit>) => void;
   onArchive: () => void;
 }) {
   const selectedProducts = constrainToEnabledProducts(outfit.productOrder, enabledProducts);
+
+  function patchProductSettings(productId: CoreProductId, patch: Partial<NonNullable<FullOutfit["productSettings"]>[CoreProductId]>) {
+    const current = outfit.productSettings?.[productId] ?? {};
+    const nextEntry = { ...current, ...patch };
+    const productSettings = { ...(outfit.productSettings ?? {}) };
+    if (!nextEntry.allowedOptions && !nextEntry.hiddenFields?.length) delete productSettings[productId];
+    else productSettings[productId] = nextEntry;
+    onChange({ productSettings: Object.keys(productSettings).length ? productSettings : undefined });
+  }
+
+  function toggleAllowedOption(productId: CoreProductId, fieldKey: string, value: string, checked: boolean) {
+    const field = fieldsByKey.get(fieldKey);
+    const allValues = (field?.options ?? [])
+      .flatMap((option) => [option.value, ...(option.children?.map((child) => child.value) ?? [])])
+      .filter(Boolean);
+    const current = outfit.productSettings?.[productId]?.allowedOptions?.[fieldKey];
+    const effective = current?.length ? current : allValues;
+    let next = checked ? [...new Set([...effective, value])] : effective.filter((entry) => entry !== value);
+    if (!checked && !next.length) return;
+    if (next.length >= allValues.length) next = [];
+    const allowedOptions = { ...(outfit.productSettings?.[productId]?.allowedOptions ?? {}) };
+    if (next.length) allowedOptions[fieldKey] = next;
+    else delete allowedOptions[fieldKey];
+    patchProductSettings(productId, {
+      allowedOptions: Object.keys(allowedOptions).length ? allowedOptions : undefined,
+      hiddenFields: outfit.productSettings?.[productId]?.hiddenFields
+    });
+  }
+
+  function toggleHiddenField(productId: CoreProductId, fieldKey: string, hidden: boolean) {
+    const current = outfit.productSettings?.[productId]?.hiddenFields ?? [];
+    const next = hidden ? [...new Set([...current, fieldKey])] : current.filter((entry) => entry !== fieldKey);
+    patchProductSettings(productId, {
+      allowedOptions: outfit.productSettings?.[productId]?.allowedOptions,
+      hiddenFields: next.length ? next : undefined
+    });
+  }
+
+  function customizationFields(productId: CoreProductId) {
+    const section = definition.sections.find((entry) => entry.id === productId);
+    if (!section) return [];
+    return section.fields.filter(
+      (field) =>
+        field.key !== PRODUCT_MODEL_KEYS[productId] &&
+        field.type !== "info" &&
+        !["booking_type", "full_outfit_id", "selected_products"].includes(field.key)
+    );
+  }
+
+  function optionFieldKeys(productId: CoreProductId) {
+    const keys = [PRODUCT_MODEL_KEYS[productId]];
+    if (productId === "robe") keys.push("robe_addition");
+    return keys.filter((key) => fieldsByKey.has(key));
+  }
   return (
     <div className={cn("rounded-[1.2rem] border border-[var(--border)] bg-white/60 p-4", outfit.enabled === false && "opacity-60")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -563,6 +623,74 @@ function OutfitEditor({
                 onImagesChange({ productImages: Object.keys(productImages).length ? productImages : undefined });
               }}
             />
+            {!disabled ? (
+              <div className="grid gap-3 rounded-xl border border-dashed border-[var(--border)] p-3">
+                <p className="text-xs font-bold text-[var(--olive-dark)]">إعدادات منتج النموذج داخل هذا الزي</p>
+                {optionFieldKeys(productId).map((fieldKey) => {
+                  const field = fieldsByKey.get(fieldKey);
+                  if (!field?.options?.length) return null;
+                  const options = field.options.filter((option) => option.enabled !== false);
+                  return (
+                    <div key={fieldKey}>
+                      <p className="mb-2 text-xs font-bold text-[var(--muted)]">{field.label}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {options.flatMap((option) =>
+                          option.children?.length
+                            ? option.children.filter((child) => child.enabled !== false).map((child) => ({
+                                value: child.value,
+                                label: `${option.label} - ${child.label}`
+                              }))
+                            : [{ value: option.value, label: option.label }]
+                        ).map((option) => {
+                          const allowed = outfit.productSettings?.[productId]?.allowedOptions?.[fieldKey];
+                          const allValues = options.flatMap((entry) =>
+                            entry.children?.length
+                              ? entry.children.filter((child) => child.enabled !== false).map((child) => child.value)
+                              : [entry.value]
+                          );
+                          const checked = !allowed?.length || allowed.includes(option.value);
+                          const effectiveCount = allowed?.length || allValues.length;
+                          return (
+                            <label key={option.value} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-3 py-1.5 text-xs font-bold">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={disabled || (checked && effectiveCount <= 1)}
+                                onChange={() => toggleAllowedOption(productId, fieldKey, option.value, !checked)}
+                              />
+                              {option.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {!outfit.productSettings?.[productId]?.allowedOptions?.[fieldKey]?.length ? (
+                        <p className="mt-1 text-[11px] text-[var(--muted)]">كل الخيارات المفعّلة في النموذج متاحة لهذا الزي.</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {customizationFields(productId).length ? (
+                  <div>
+                    <p className="mb-2 text-xs font-bold text-[var(--muted)]">التخصيصات الظاهرة للطالب</p>
+                    <div className="flex flex-wrap gap-2">
+                      {customizationFields(productId).map((field) => {
+                        const hidden = outfit.productSettings?.[productId]?.hiddenFields?.includes(field.key) ?? false;
+                        return (
+                          <label key={field.key} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-3 py-1.5 text-xs font-bold">
+                            <input
+                              type="checkbox"
+                              checked={!hidden}
+                              onChange={(event) => toggleHiddenField(productId, field.key, !event.target.checked)}
+                            />
+                            {field.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </li>
         ))}
       </ol>

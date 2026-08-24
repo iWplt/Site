@@ -1,8 +1,13 @@
 import { z } from "zod";
-import { fieldIsVisible, flattenFields } from "@/lib/form-definition";
+import { flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
-import { asStringList, isBlankValue, resolveOutfitAnswers } from "@/lib/outfit-architecture";
-import { optionVisibleForBooking } from "@/lib/product-catalog";
+import {
+  asStringList,
+  fieldVisibleForBookingContext,
+  isBlankValue,
+  optionsForBookingContext,
+  resolveOutfitAnswers
+} from "@/lib/outfit-architecture";
 import { requiredUploadError } from "@/lib/required-upload";
 import type { FormDefinition } from "@/lib/types";
 
@@ -42,7 +47,7 @@ export function validateDynamicAnswers(
 
   for (const field of flattenFields(definition.sections)) {
     if (field.type === "info" || field.type === "section") continue;
-    if (!fieldIsVisible(field, resolved)) continue;
+    if (!fieldVisibleForBookingContext(field, definition, resolved)) continue;
 
     if (["image_upload", "file_upload"].includes(field.type)) {
       const uploadError = requiredUploadError(files?.[field.key], field.required);
@@ -83,15 +88,11 @@ export function validateDynamicAnswers(
     }
 
     if (["radio", "select", "image_choice"].includes(field.type) && value && field.options?.length) {
-      const allowed = new Set(
-        field.options
-          .filter((option) => optionVisibleForBooking(option, resolved.booking_type))
-          .flatMap((option) => [
-            option.value,
-            ...(option.children?.filter((child) => child.enabled !== false).map((child) => child.value) ?? [])
-          ])
+      const allowed = optionsForBookingContext(field, definition, resolved);
+      const allowedValues = new Set(
+        allowed.flatMap((option) => [option.value, ...(option.children?.filter((child) => child.enabled !== false).map((child) => child.value) ?? [])])
       );
-      if (!allowed.has(String(value))) errors[field.key] = "الخيار المحدد غير متاح.";
+      if (!allowedValues.has(String(value))) errors[field.key] = "الخيار المحدد غير متاح.";
     }
   }
 

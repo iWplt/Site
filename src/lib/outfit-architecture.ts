@@ -1,3 +1,5 @@
+import { fieldIsVisible } from "./form-definition.ts";
+import { optionVisibleForBooking } from "./product-catalog.ts";
 import type {
   BookingMode,
   CatalogFormAssignment,
@@ -5,9 +7,11 @@ import type {
   CoreProductId,
   FormDefinition,
   FormField,
+  FormOption,
   FormSection,
   FullOutfit,
-  OutfitConfig
+  OutfitConfig,
+  OutfitProductSettings
 } from "./types";
 
 export const CORE_PRODUCT_IDS: CoreProductId[] = ["robe", "sash", "cap"];
@@ -152,6 +156,31 @@ function sanitizeProductImages(raw?: FullOutfit["productImages"]): FullOutfit["p
   return Object.keys(next).length ? next : undefined;
 }
 
+function sanitizeProductSettings(
+  raw: FullOutfit["productSettings"],
+  productOrder: CoreProductId[]
+): FullOutfit["productSettings"] {
+  if (!raw) return undefined;
+  const next: NonNullable<FullOutfit["productSettings"]> = {};
+  for (const productId of productOrder) {
+    const entry = raw[productId];
+    if (!entry) continue;
+    const allowedOptions: NonNullable<OutfitProductSettings["allowedOptions"]> = {};
+    for (const [fieldKey, values] of Object.entries(entry.allowedOptions ?? {})) {
+      const cleaned = [...new Set((values ?? []).map((value) => String(value).trim()).filter(Boolean))];
+      if (cleaned.length) allowedOptions[fieldKey] = cleaned;
+    }
+    const hiddenFields = [...new Set((entry.hiddenFields ?? []).map((value) => String(value).trim()).filter(Boolean))];
+    if (Object.keys(allowedOptions).length || hiddenFields.length) {
+      next[productId] = {
+        allowedOptions: Object.keys(allowedOptions).length ? allowedOptions : undefined,
+        hiddenFields: hiddenFields.length ? hiddenFields : undefined
+      };
+    }
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
 function sanitizeFullOutfit(
   outfit: FullOutfit,
   index: number,
@@ -160,6 +189,7 @@ function sanitizeFullOutfit(
 ): FullOutfit | null {
   const name = outfit.name?.trim();
   if (!name) return null;
+  const productOrder = membershipFromFormProducts(outfit.productOrder ?? fallbackOrder, enabled);
   return {
     id: outfit.id?.trim() || `outfit-${index + 1}`,
     name,
@@ -167,8 +197,9 @@ function sanitizeFullOutfit(
     imageUrl: outfit.imageUrl?.trim() || undefined,
     imagePath: outfit.imagePath?.trim() || undefined,
     enabled: outfit.enabled !== false,
-    productOrder: membershipFromFormProducts(outfit.productOrder ?? fallbackOrder, enabled),
-    productImages: sanitizeProductImages(outfit.productImages)
+    productOrder,
+    productImages: sanitizeProductImages(outfit.productImages),
+    productSettings: sanitizeProductSettings(outfit.productSettings, productOrder)
   };
 }
 
@@ -187,6 +218,104 @@ export function resolveSelectedOutfit(definition: FormDefinition, answers: Recor
 export function outfitProductDisplayImage(outfit: FullOutfit | undefined, productId: string) {
   if (!outfit || !CORE_PRODUCT_IDS.includes(productId as CoreProductId)) return undefined;
   return outfit.productImages?.[productId as CoreProductId]?.imageUrl;
+}
+
+export function coreProductForFieldKey(fieldKey: string): CoreProductId | undefined {
+  if (Object.values(PRODUCT_MODEL_KEYS).includes(fieldKey)) {
+    return (Object.entries(PRODUCT_MODEL_KEYS).find(([, key]) => key === fieldKey)?.[0] ?? undefined) as CoreProductId | undefined;
+  }
+  if (fieldKey.startsWith("robe_")) return "robe";
+  if (fieldKey.startsWith("sash_") || fieldKey.includes("embroidery")) return "sash";
+  if (fieldKey.startsWith("cap_")) return "cap";
+  return undefined;
+}
+
+function flattenOptionValues(options: FormOption[]): Set<string> {
+  const values = new Set<string>();
+  for (const option of options) {
+    if (option.enabled === false) continue;
+    values.add(option.value);
+    for (const child of option.children ?? []) {
+      if (child.enabled !== false) values.add(child.value);
+    }
+  }
+  return values;
+}
+
+function filterOptionsByAllowed(options: FormOption[], allowed: string[]): FormOption[] {
+  const allowedSet = new Set(allowed);
+  return options
+    .map((option) => {
+      if (option.enabled === false) return null;
+      const children = (option.children ?? []).filter((child) => child.enabled !== false && allowedSet.has(child.value));
+      if (children.length) return { ...option, children };
+      if (allowedSet.has(option.value)) return { ...option, children: undefined };
+      return null;
+    })
+    .filter((option): option is FormOption => Boolean(option));
+}
+
+/** Booking-context option list: form options filtered by booking mode and, for full outfits, outfit membership settings. */
+export function optionsForBookingContext(
+  field: FormField,
+  definition: FormDefinition,
+  answers: Record<string, unknown>
+): FormOption[] {
+  const base = (field.options ?? []).filter((option) => option.enabled !== false);
+  const options = base.filter((option) => optionVisibleForBooking(option, answers.booking_type));
+  if (String(answers.booking_type) === "single_pieces") return options;
+
+  const outfit = resolveSelectedOutfit(definition, answers);
+  if (!outfit?.productSettings) return options;
+
+  const productId = coreProductForFieldKey(field.key);
+  if (!productId) return options;
+
+  const allowed = outfit.productSettings[productId]?.allowedOptions?.[field.key];
+  if (!allowed?.length) return options;
+  return filterOptionsByAllowed(options, allowed);
+}
+
+export function optionValuesForBookingContext(
+  field: FormField,
+  definition: FormDefinition,
+  answers: Record<string, unknown>
+): Set<string> {
+  return flattenOptionValues(optionsForBookingContext(field, definition, answers));
+}
+
+/** Full-outfit field visibility includes outfit-specific customization hiding. Single Item uses form config only. */
+export function fieldVisibleForBookingContext(
+  field: FormField,
+  definition: FormDefinition,
+  answers: Record<string, unknown>
+): boolean {
+  if (!fieldIsVisible(field, answers)) return false;
+  if (String(answers.booking_type) === "single_pieces") return true;
+
+  const outfit = resolveSelectedOutfit(definition, answers);
+  if (!outfit?.productSettings) return true;
+
+  const productId = coreProductForFieldKey(field.key);
+  if (!productId) return true;
+
+  const hidden = outfit.productSettings[productId]?.hiddenFields ?? [];
+  return !hidden.includes(field.key);
+}
+
+function pruneInvalidChoiceAnswers(definition: FormDefinition, answers: Record<string, unknown>) {
+  const next = { ...answers };
+  for (const section of definition.sections) {
+    for (const field of section.fields) {
+      if (!["radio", "select", "image_choice"].includes(field.type)) continue;
+      if (!fieldVisibleForBookingContext(field, definition, next)) continue;
+      const value = next[field.key];
+      if (isBlankValue(value)) continue;
+      const allowed = optionValuesForBookingContext(field, definition, next);
+      if (!allowed.has(String(value))) delete next[field.key];
+    }
+  }
+  return next;
 }
 
 export function asStringList(value: unknown): string[] {
@@ -231,7 +360,7 @@ export function resolveOutfitAnswers(definition: FormDefinition, answers: Record
     next.selected_products = selected;
   }
 
-  return next;
+  return pruneInvalidChoiceAnswers(definition, next);
 }
 
 export function productIsSelected(answers: Record<string, unknown>, product: CoreProductId) {
