@@ -51,7 +51,11 @@ export function validateDynamicAnswers(
     if (!fieldVisibleForBookingContext(field, definition, resolved)) continue;
 
     if (["image_upload", "file_upload"].includes(field.type)) {
-      const uploadError = requiredUploadError(files?.[field.key], field.required);
+      const uploadError = requiredUploadError(
+        files?.[field.key],
+        field.required,
+        field.uploadMode === "multiple" ? field.maxFiles : 1
+      );
       if (uploadError) errors[field.key] = uploadError;
       continue;
     }

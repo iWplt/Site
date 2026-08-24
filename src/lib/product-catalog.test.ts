@@ -4,11 +4,12 @@ import {
   catalogFieldKey,
   filterAvailableProducts,
   formatProductPrice,
+  isCatalogProductAttachedToForm,
   isProductAvailable,
   mergeCatalogIntoDefinition,
   optionVisibleForBooking
 } from "./product-catalog.ts";
-import type { CatalogProduct, FormDefinition, ProductCategory } from "./types.ts";
+import type { CatalogAudience, CatalogProduct, FormDefinition, ProductCategory } from "./types.ts";
 
 const categories: ProductCategory[] = [
   { id: "cat-robe", slug: "robe", name_ar: "روب", sort_order: 10 },
@@ -163,4 +164,26 @@ test("optionVisibleForBooking respects assignment modes and enabled flag", () =>
     optionVisibleForBooking({ id: "a", label: "a", value: "a", enabled: false, bookingModes: ["full_set"] }, "full_set"),
     false
   );
+});
+
+test("isCatalogProductAttachedToForm detects existing form link without duplicating identity", () => {
+  const audience: CatalogAudience = { formId: "form-1", formType: "BATCH", batchId: "batch-1" };
+  const attached: CatalogProduct = {
+    id: "prod-1",
+    category_id: "cat-robe",
+    name_ar: "روب",
+    active: true,
+    archived: false,
+    sort_order: 1,
+    created_at: "2026-01-01",
+    updated_at: "2026-01-01",
+    availability: [{ id: "av-1", product_id: "prod-1", scope: "forms", form_id: "form-1" }]
+  };
+  const otherForm: CatalogProduct = {
+    ...attached,
+    id: "prod-2",
+    availability: [{ id: "av-2", product_id: "prod-2", scope: "forms", form_id: "form-other" }]
+  };
+  assert.equal(isCatalogProductAttachedToForm(attached, audience), true);
+  assert.equal(isCatalogProductAttachedToForm(otherForm, audience), false);
 });

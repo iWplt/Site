@@ -16,9 +16,24 @@ type Props = {
   fields: FormField[];
 };
 
+function clientActionError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    if (/unexpected response was received from the server/i.test(error.message)) {
+      return "تعذر إتمام العملية على الخادم. أعد المحاولة أو تحقق من بيانات الخيار.";
+    }
+    return error.message;
+  }
+  return fallback;
+}
+
 export function FormOptionImageEditor({ formId, fields }: Props) {
-  const choiceFields = fields.filter((field) =>
-    ["radio", "select", "image_choice"].includes(field.type)
+  const choiceFields = fields.filter(
+    (field) =>
+      ["radio", "select", "image_choice"].includes(field.type) &&
+      field.key !== "full_outfit_id" &&
+      field.key !== "selected_products" &&
+      field.key !== "booking_type" &&
+      !field.key.startsWith("catalog_")
   );
 
   if (!choiceFields.length) return null;
@@ -47,10 +62,16 @@ function FieldOptionEditor({ formId, field }: { formId: string; field: FormField
     setShowImages(next);
     startTransition(async () => {
       try {
-        await updateFormFieldMetaAction(formId, field.key, { showOptionImages: next });
+        const result = await updateFormFieldMetaAction(formId, field.key, { showOptionImages: next });
+        if (!result.success) {
+          setShowImages(!next);
+          setMessage(result.error);
+          return;
+        }
         setMessage("تم حفظ إعداد عرض الصور.");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "تعذر الحفظ.");
+        setShowImages(!next);
+        setMessage(clientActionError(error, "تعذر الحفظ."));
       }
     });
   }
@@ -73,9 +94,13 @@ function FieldOptionEditor({ formId, field }: { formId: string; field: FormField
         </label>
       </div>
       <div className="mt-4 grid gap-3">
-        {(field.options ?? []).flatMap((option) => {
-          const nodes = option.children?.length ? option.children : [option];
-          return nodes.map((node) => (
+        {(field.options ?? [])
+          .flatMap((option) => {
+            const nodes = option.children?.length ? option.children : [option];
+            return nodes.map((node) => ({ option, node }));
+          })
+          .filter(({ node }) => !node.catalogProductId)
+          .map(({ option, node }) => (
             <OptionRow
               key={node.id}
               formId={formId}
@@ -84,8 +109,7 @@ function FieldOptionEditor({ formId, field }: { formId: string; field: FormField
               option={node}
               onMessage={setMessage}
             />
-          ));
-        })}
+          ))}
       </div>
       {message ? <p className="mt-3 text-sm font-bold text-[var(--olive)]">{message}</p> : null}
     </div>
@@ -110,25 +134,31 @@ function OptionRow({
   const [description, setDescription] = useState(option.description ?? "");
   const [enabled, setEnabled] = useState(option.enabled !== false);
   const [preview, setPreview] = useState(option.imageUrl);
+  const previousPreview = useRef(option.imageUrl);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function saveMeta() {
     startTransition(async () => {
       try {
-        await updateFormOptionAction(formId, fieldKey, option.id, {
+        const result = await updateFormOptionAction(formId, fieldKey, option.id, {
           label: label.trim() || option.label,
           description: description.trim() || undefined,
           enabled
         });
+        if (!result.success) {
+          onMessage(result.error);
+          return;
+        }
         onMessage("تم حفظ بيانات الخيار.");
       } catch (error) {
-        onMessage(error instanceof Error ? error.message : "تعذر الحفظ.");
+        onMessage(clientActionError(error, "تعذر الحفظ."));
       }
     });
   }
 
   function upload(file: File | undefined) {
     if (!file) return;
+    const prior = previousPreview.current ?? preview;
     startTransition(async () => {
       try {
         const body = new FormData();
@@ -137,26 +167,38 @@ function OptionRow({
         body.set("optionId", option.id);
         body.set("file", file);
         const result = await uploadFormOptionImageAction(body);
-        if (result && "error" in result && result.error) {
+        if (!result.success) {
+          setPreview(prior);
           onMessage(result.error);
           return;
         }
-        if (result && "imageUrl" in result) setPreview(result.imageUrl as string | undefined);
+        const nextUrl = result.data?.imageUrl;
+        setPreview(nextUrl);
+        previousPreview.current = nextUrl;
         onMessage("تم رفع صورة الخيار.");
       } catch (error) {
-        onMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
+        setPreview(prior);
+        onMessage(clientActionError(error, "تعذر رفع الصورة."));
       }
     });
   }
 
   function removeImage() {
+    const prior = previousPreview.current ?? preview;
     startTransition(async () => {
       try {
-        await deleteFormOptionImageAction(formId, fieldKey, option.id);
+        const result = await deleteFormOptionImageAction(formId, fieldKey, option.id);
+        if (!result.success) {
+          setPreview(prior);
+          onMessage(result.error);
+          return;
+        }
         setPreview(undefined);
+        previousPreview.current = undefined;
         onMessage("تم حذف صورة الخيار.");
       } catch (error) {
-        onMessage(error instanceof Error ? error.message : "تعذر حذف الصورة.");
+        setPreview(prior);
+        onMessage(clientActionError(error, "تعذر حذف الصورة."));
       }
     });
   }

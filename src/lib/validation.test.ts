@@ -26,3 +26,11 @@ test("required upload with 3 of max 3 files is valid", () => {
 test("required=false allows zero files", () => {
   assert.equal(requiredUploadError([], false), undefined);
 });
+
+test("maxFiles is an upper bound and does not require the exact count", () => {
+  assert.equal(requiredUploadError(one, true, 3), undefined);
+  assert.equal(requiredUploadError(two, true, 3), undefined);
+  assert.equal(requiredUploadError(three, true, 3), undefined);
+  assert.ok(requiredUploadError([{}, {}, {}, {}], true, 3));
+  assert.equal(requiredUploadError([], false, 3), undefined);
+});

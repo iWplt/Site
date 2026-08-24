@@ -31,6 +31,7 @@ import { applyCopiedFormConfig, catalogProductIdsFromDefinition, type CopyFormSl
 import { getAdminForm } from "@/lib/data";
 import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
+import { actionFail, actionFailFromUnknown, actionOk, logFormOptionOp, type ActionResult } from "@/lib/action-result";
 import { deleteOptionImage, deleteOutfitAssetFile, storeOptionImage, storeOutfitAsset } from "@/lib/storage/uploads";
 import {
   sbAssertBatchAccess,
@@ -115,7 +116,8 @@ function isNextRedirectError(error: unknown): error is { digest: string } {
 /** Finds `optionId` anywhere in an option tree (including nested children) and replaces it via `fn`. */
 function mapOptionTree(options: FormOption[], optionId: string, fn: (option: FormOption) => FormOption): FormOption[] {
   return options.map((option) => {
-    if (option.id === optionId) return fn(option);
+    if (option.id === optionId || option.catalogProductId === optionId || option.value === optionId) return fn(option);
+    if (option.catalogProductId && optionId === `catalog-${option.catalogProductId}`) return fn(option);
     if (option.children?.length) return { ...option, children: mapOptionTree(option.children, optionId, fn) };
     return option;
   });
@@ -131,6 +133,9 @@ function updateLocalFormOption(
 ): FormOption {
   const form = db.forms.find((entry) => entry.id === formId);
   if (!form) throw new Error("النموذج غير موجود.");
+  if (fieldKey === "full_outfit_id" || fieldKey === "selected_products") {
+    throw new Error("هذا الخيار يُدار من إعدادات الزي وليس من قائمة الخيارات.");
+  }
 
   let updated: FormOption | undefined;
   form.definition = {
@@ -149,8 +154,39 @@ function updateLocalFormOption(
       })
     }))
   };
-  if (!updated) throw new Error("الخيار غير موجود.");
-  return updated;
+  if (updated) return updated;
+
+  const catalogId =
+    (optionId.startsWith("catalog-") ? optionId.slice("catalog-".length) : undefined) ||
+    (form.definition.outfitConfig?.catalogAssignments && optionId in form.definition.outfitConfig.catalogAssignments
+      ? optionId
+      : undefined);
+  if (catalogId) {
+    const config = sanitizeOutfitConfig(form.definition.outfitConfig);
+    const current = normalizeCatalogAssignment(config.catalogAssignments?.[catalogId]);
+    const patch = updater({
+      id: `catalog-${catalogId}`,
+      value: catalogId,
+      label: catalogId,
+      catalogProductId: catalogId,
+      enabled: true
+    });
+    if (typeof patch.enabled === "boolean") {
+      form.definition = {
+        ...form.definition,
+        outfitConfig: {
+          ...config,
+          catalogAssignments: {
+            ...config.catalogAssignments,
+            [catalogId]: { ...current, hidden: !patch.enabled }
+          }
+        }
+      };
+    }
+    return { ...patch, id: `catalog-${catalogId}`, value: catalogId, catalogProductId: catalogId };
+  }
+
+  throw new Error("الخيار غير موجود.");
 }
 
 export async function loginAction(_state: { error?: string } | undefined, formData: FormData) {
@@ -1023,24 +1059,49 @@ export async function updateFormOptionAction(
   fieldKey: string,
   optionId: string,
   patch: { label?: string; description?: string; enabled?: boolean; imageAlt?: string; showOptionImages?: never }
-) {
-  await requireUser(["OWNER"]);
-  // `showOptionImages` belongs to the field, not the option — never forwarded to the option patch.
+): Promise<ActionResult<{ id: string; label: string; enabled: boolean }>> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch (error) {
+    logFormOptionOp("updateFormOption.auth", { formId, fieldKey, optionId, error: error instanceof Error ? error.message : "auth" });
+    return actionFail("غير مصرح.", "unauthorized");
+  }
+
   const { showOptionImages, ...optionPatch } = patch;
   void showOptionImages;
 
-  let option: FormOption;
-  if (assertPersistenceAllowed() === "supabase") {
-    option = await sbUpdateFormOption(formId, fieldKey, optionId, optionPatch);
-  } else {
-    option = mutateDb((db) => {
-      const updated = updateLocalFormOption(db, formId, fieldKey, optionId, (current) => ({ ...current, ...optionPatch }));
-      audit(db, "FORM_OPTION_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, optionId, patch: optionPatch });
-      return updated;
+  try {
+    let option: FormOption;
+    if (assertPersistenceAllowed() === "supabase") {
+      option = await sbUpdateFormOption(formId, fieldKey, optionId, optionPatch);
+    } else {
+      option = mutateDb((db) => {
+        const updated = updateLocalFormOption(db, formId, fieldKey, optionId, (current) => ({ ...current, ...optionPatch }));
+        audit(db, "FORM_OPTION_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, optionId, patch: optionPatch });
+        return updated;
+      });
+    }
+    try {
+      revalidateAdmin();
+    } catch (revalidateError) {
+      logFormOptionOp("updateFormOption.revalidate", {
+        formId,
+        fieldKey,
+        optionId,
+        error: revalidateError instanceof Error ? revalidateError.message : "revalidate"
+      });
+    }
+    logFormOptionOp("updateFormOption.ok", { formId, fieldKey, optionId });
+    return actionOk({
+      id: option.id,
+      label: option.label,
+      enabled: option.enabled !== false
     });
+  } catch (error) {
+    const failed = actionFailFromUnknown(error, "تعذر تحديث الخيار.");
+    logFormOptionOp("updateFormOption.fail", { formId, fieldKey, optionId, code: failed.code, error: failed.error });
+    return failed;
   }
-  revalidateAdmin();
-  return option;
 }
 
 export async function updateFormFieldMetaAction(
@@ -1055,19 +1116,38 @@ export async function updateFormFieldMetaAction(
     minSelections?: number | null;
     maxSelections?: number | null;
   }
-) {
-  await requireUser(["OWNER"]);
-  if (assertPersistenceAllowed() === "supabase") {
-    await sbUpdateFormFieldMeta(formId, fieldKey, patch);
-  } else {
-    mutateDb((db) => {
-      const form = db.forms.find((entry) => entry.id === formId);
-      if (!form) throw new Error("النموذج غير موجود.");
-      form.definition = patchLocalFieldMeta(form.definition, fieldKey, patch);
-      audit(db, "FORM_FIELD_META_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, patch });
-    });
+): Promise<ActionResult> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
   }
-  revalidateAdmin();
+
+  try {
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbUpdateFormFieldMeta(formId, fieldKey, patch);
+    } else {
+      mutateDb((db) => {
+        const form = db.forms.find((entry) => entry.id === formId);
+        if (!form) throw new Error("النموذج غير موجود.");
+        form.definition = patchLocalFieldMeta(form.definition, fieldKey, patch);
+        audit(db, "FORM_FIELD_META_UPDATED", "booking_form", formId, { label: "owner" }, { fieldKey, patch });
+      });
+    }
+    try {
+      revalidateAdmin();
+    } catch {
+      /* write already committed */
+    }
+    return actionOk();
+  } catch (error) {
+    logFormOptionOp("updateFormFieldMeta.fail", {
+      formId,
+      fieldKey,
+      error: error instanceof Error ? error.message : "fail"
+    });
+    return actionFailFromUnknown(error, "تعذر تحديث إعدادات الحقل.");
+  }
 }
 
 export async function updateFormOutfitConfigAction(formId: string, raw: OutfitConfig) {
@@ -1098,14 +1178,17 @@ export async function saveFormCatalogProductAction(input: {
     sort_order?: number;
   };
   assignment?: CatalogFormAssignment;
-}): Promise<{ error?: string; productId?: string }> {
+  /** When true, attaching an already-linked catalog product returns alreadyAttached instead of silently updating. */
+  rejectIfAttached?: boolean;
+}): Promise<{ error?: string; productId?: string; alreadyAttached?: boolean }> {
   const user = await requireUser(["OWNER"]);
   const form = await getAdminForm(user, input.formId);
   if (!form) return { error: "النموذج غير موجود." };
   const assignment = normalizeCatalogAssignment(input.assignment);
   const audience = { formId: form.id, formType: form.type, batchId: form.batch_id };
   try {
-    const { attachProductToForm, createCatalogProduct } = await import("@/lib/store/catalog-store");
+    const { attachProductToForm, createCatalogProduct, listCatalogProducts } = await import("@/lib/store/catalog-store");
+    const { isCatalogProductAttachedToForm } = await import("@/lib/product-catalog");
     let productId = input.productId?.trim();
     if (!productId) {
       const created = input.create;
@@ -1122,6 +1205,16 @@ export async function saveFormCatalogProductAction(input: {
       });
       productId = product.id;
     } else {
+      const products = await listCatalogProducts({ resolveImages: false });
+      const existing = products.find((entry) => entry.id === productId);
+      if (!existing || existing.archived) return { error: "المنتج غير موجود." };
+      if (input.rejectIfAttached && isCatalogProductAttachedToForm(existing, audience)) {
+        return {
+          error: "هذا المنتج مضاف بالفعل إلى النموذج",
+          productId,
+          alreadyAttached: true
+        };
+      }
       await attachProductToForm(productId, audience);
     }
     await patchFormCatalogAssignment(form.id, productId, assignment);
@@ -1371,8 +1464,14 @@ function patchLocalFieldMeta(
   return { ...next, sections: [...next.sections, { ...liveSection, fields: [patched] }] };
 }
 
-export async function uploadFormOptionImageAction(formData: FormData) {
-  await requireUser(["OWNER"]);
+export async function uploadFormOptionImageAction(formData: FormData): Promise<
+  ActionResult<{ imagePath: string; imageUrl?: string }>
+> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
 
   const formId = String(formData.get("formId") ?? "").trim();
   const fieldKey = String(formData.get("fieldKey") ?? "").trim();
@@ -1380,18 +1479,24 @@ export async function uploadFormOptionImageAction(formData: FormData) {
   const file = formData.get("file");
 
   if (!formId || !fieldKey || !optionId || !(file instanceof File)) {
-    return { error: "بيانات الصورة غير مكتملة." };
+    return actionFail("بيانات الصورة غير مكتملة.", "validation");
   }
   if (file.size > MAX_OPTION_IMAGE_BYTES) {
-    return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
+    return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
+  }
+  if (file.size <= 0) {
+    return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
   }
 
   try {
     const mode = assertPersistenceAllowed();
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (!buffer.byteLength) {
+      return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
+    }
     const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
     if (!mimeType) {
-      return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+      return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
     }
 
     const stored = await storeOptionImage(formId, fieldKey, optionId, {
@@ -1399,6 +1504,10 @@ export async function uploadFormOptionImageAction(formData: FormData) {
       mimeType,
       originalName: file.name
     });
+
+    if (!stored.imagePath) {
+      return actionFail("تعذر حفظ مسار الصورة بعد الرفع.", "storage");
+    }
 
     if (mode !== "supabase") {
       mutateDb((db) => {
@@ -1411,32 +1520,73 @@ export async function uploadFormOptionImageAction(formData: FormData) {
       });
     }
 
-    revalidateAdmin();
-    return { success: true as const, imagePath: stored.imagePath, imageUrl: stored.imageUrl };
+    try {
+      revalidateAdmin();
+    } catch {
+      /* image already committed */
+    }
+    logFormOptionOp("uploadFormOptionImage.ok", { formId, fieldKey, optionId });
+    return actionOk({ imagePath: stored.imagePath, imageUrl: stored.imageUrl });
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "تعذر رفع الصورة." };
+    const failed = actionFailFromUnknown(error, "تعذر رفع الصورة.");
+    logFormOptionOp("uploadFormOptionImage.fail", {
+      formId,
+      fieldKey,
+      optionId,
+      code: failed.code,
+      error: failed.error
+    });
+    return failed;
   }
 }
 
-export async function deleteFormOptionImageAction(formId: string, fieldKey: string, optionId: string) {
-  await requireUser(["OWNER"]);
-  const mode = assertPersistenceAllowed();
-
-  // In supabase mode this clears imagePath/imageUrl on the definition itself; in local mode
-  // it is a no-op and we clear those fields on the local-db record below.
-  await deleteOptionImage(formId, fieldKey, optionId);
-
-  if (mode !== "supabase") {
-    mutateDb((db) => {
-      updateLocalFormOption(db, formId, fieldKey, optionId, (option) => ({
-        ...option,
-        imagePath: undefined,
-        imageUrl: undefined
-      }));
-      audit(db, "FORM_OPTION_IMAGE_DELETED", "booking_form", formId, { label: "owner" }, { fieldKey, optionId });
-    });
+export async function deleteFormOptionImageAction(
+  formId: string,
+  fieldKey: string,
+  optionId: string
+): Promise<ActionResult> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
   }
-  revalidateAdmin();
+
+  if (!formId || !fieldKey || !optionId) {
+    return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  }
+
+  try {
+    const mode = assertPersistenceAllowed();
+    await deleteOptionImage(formId, fieldKey, optionId);
+
+    if (mode !== "supabase") {
+      mutateDb((db) => {
+        updateLocalFormOption(db, formId, fieldKey, optionId, (option) => ({
+          ...option,
+          imagePath: undefined,
+          imageUrl: undefined
+        }));
+        audit(db, "FORM_OPTION_IMAGE_DELETED", "booking_form", formId, { label: "owner" }, { fieldKey, optionId });
+      });
+    }
+    try {
+      revalidateAdmin();
+    } catch {
+      /* delete already committed */
+    }
+    logFormOptionOp("deleteFormOptionImage.ok", { formId, fieldKey, optionId });
+    return actionOk();
+  } catch (error) {
+    const failed = actionFailFromUnknown(error, "تعذر حذف الصورة.");
+    logFormOptionOp("deleteFormOptionImage.fail", {
+      formId,
+      fieldKey,
+      optionId,
+      code: failed.code,
+      error: failed.error
+    });
+    return failed;
+  }
 }
 
 function patchLocalOutfitImage(
@@ -1470,39 +1620,69 @@ function patchLocalOutfitImage(
   });
 }
 
-export async function uploadOutfitImageAction(formData: FormData) {
-  await requireUser(["OWNER"]);
+export async function uploadOutfitImageAction(formData: FormData): Promise<
+  ActionResult<{ imagePath: string; imageUrl?: string }>
+> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
   const formId = String(formData.get("formId") ?? "").trim();
   const outfitId = String(formData.get("outfitId") ?? "").trim();
   const productRaw = String(formData.get("productId") ?? "").trim();
   const productId = CORE_PRODUCT_IDS.includes(productRaw as CoreProductId) ? (productRaw as CoreProductId) : undefined;
   const file = formData.get("file");
-  if (!formId || !outfitId || !(file instanceof File)) return { error: "بيانات الصورة غير مكتملة." };
-  if (file.size > MAX_OPTION_IMAGE_BYTES) return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
+  if (!formId || !outfitId || !(file instanceof File)) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  if (file.size > MAX_OPTION_IMAGE_BYTES) return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
+  if (file.size <= 0) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (!buffer.byteLength) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
     const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
-    if (!mimeType) return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+    if (!mimeType) return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
     const stored = await storeOutfitAsset(formId, outfitId, productId, {
       buffer,
       mimeType,
       originalName: file.name
     });
+    if (!stored.imagePath) return actionFail("تعذر حفظ مسار الصورة بعد الرفع.", "storage");
     if (assertPersistenceAllowed() === "supabase") {
       await sbPatchOutfitImage(formId, outfitId, productId, stored);
     } else {
       patchLocalOutfitImage(formId, outfitId, productId, stored);
     }
-    revalidateAdmin();
-    return { success: true as const, imagePath: stored.imagePath, imageUrl: stored.imageUrl };
+    try {
+      revalidateAdmin();
+    } catch {
+      /* committed */
+    }
+    logFormOptionOp("uploadOutfitImage.ok", { formId, outfitId, productId });
+    return actionOk({ imagePath: stored.imagePath, imageUrl: stored.imageUrl });
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "تعذر رفع الصورة." };
+    const failed = actionFailFromUnknown(error, "تعذر رفع الصورة.");
+    logFormOptionOp("uploadOutfitImage.fail", {
+      formId,
+      outfitId,
+      productId,
+      code: failed.code,
+      error: failed.error
+    });
+    return failed;
   }
 }
 
-export async function deleteOutfitImageAction(formId: string, outfitId: string, productId?: CoreProductId) {
-  await requireUser(["OWNER"]);
-  if (!formId || !outfitId) return { error: "بيانات الصورة غير مكتملة." };
+export async function deleteOutfitImageAction(
+  formId: string,
+  outfitId: string,
+  productId?: CoreProductId
+): Promise<ActionResult> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
+  if (!formId || !outfitId) return actionFail("بيانات الصورة غير مكتملة.", "validation");
   try {
     let previousPath: string | undefined;
     if (assertPersistenceAllowed() === "supabase") {
@@ -1518,10 +1698,14 @@ export async function deleteOutfitImageAction(formId: string, outfitId: string, 
       patchLocalOutfitImage(formId, outfitId, productId, null);
     }
     await deleteOutfitAssetFile(previousPath);
-    revalidateAdmin();
-    return { success: true as const };
+    try {
+      revalidateAdmin();
+    } catch {
+      /* committed */
+    }
+    return actionOk();
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "تعذر حذف الصورة." };
+    return actionFailFromUnknown(error, "تعذر حذف الصورة.");
   }
 }
 
@@ -1720,22 +1904,32 @@ export async function createProductCategoryAction(formData: FormData) {
   revalidateAdmin();
 }
 
-export async function uploadProductImageAction(formData: FormData) {
-  await requireUser(["OWNER"]);
+export async function uploadProductImageAction(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
   const productId = String(formData.get("product_id") ?? "").trim();
   const file = formData.get("file");
-  if (!productId || !(file instanceof File)) return { error: "بيانات الصورة غير مكتملة." };
-  if (file.size > MAX_OPTION_IMAGE_BYTES) return { error: "حجم الصورة يتجاوز 5 ميغابايت." };
+  if (!productId || !(file instanceof File)) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  if (file.size > MAX_OPTION_IMAGE_BYTES) return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
+  if (file.size <= 0) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (!buffer.byteLength) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
     const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
-    if (!mimeType) return { error: "نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp." };
+    if (!mimeType) return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
     const { saveCatalogProductImage } = await import("@/lib/store/catalog-store");
     await saveCatalogProductImage(productId, { buffer, mimeType, originalName: file.name });
-    revalidateAdmin();
-    return { success: true as const };
+    try {
+      revalidateAdmin();
+    } catch {
+      /* image already committed */
+    }
+    return actionOk();
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "تعذر رفع الصورة." };
+    return actionFailFromUnknown(error, "تعذر رفع الصورة.");
   }
 }
 

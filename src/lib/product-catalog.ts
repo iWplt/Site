@@ -122,6 +122,11 @@ export function assignedCatalogProducts(
     });
 }
 
+/** True when the catalog product is already attached to this form (same entity — do not re-attach). */
+export function isCatalogProductAttachedToForm(product: CatalogProduct, audience: CatalogAudience) {
+  return !product.archived && product.active !== false && isProductAvailable(product.availability, audience);
+}
+
 function optionValues(options: FormOption[] | undefined) {
   const values = new Set<string>();
   for (const option of options ?? []) {

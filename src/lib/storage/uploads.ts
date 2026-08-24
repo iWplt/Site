@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getPersistenceMode } from "@/lib/persistence";
-import { extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
+import { extensionForMime, sanitizeStorageSegment, stableStorageSegment } from "@/lib/upload-security";
 import {
   sbDeleteOptionImage,
   sbResolveOptionImageUrl,
@@ -103,9 +103,9 @@ export async function storeOptionImage(
   const relativeDir = join(
     "uploads",
     "form-options",
-    sanitizeStorageSegment(formId),
-    sanitizeStorageSegment(fieldKey),
-    sanitizeStorageSegment(optionId)
+    stableStorageSegment(formId),
+    stableStorageSegment(fieldKey),
+    stableStorageSegment(optionId)
   );
   const fileName = `reference.${extension}`;
   const imagePath = writePublicFile(relativeDir, fileName, file.buffer);
@@ -129,8 +129,8 @@ export async function storeOutfitAsset(
   file: UploadInputFile
 ): Promise<StoredOutfitAsset> {
   const relativeKey = productId
-    ? `outfits/${sanitizeStorageSegment(outfitId)}/products/${sanitizeStorageSegment(productId)}`
-    : `outfits/${sanitizeStorageSegment(outfitId)}/cover`;
+    ? `outfits/${stableStorageSegment(outfitId)}/products/${stableStorageSegment(productId)}`
+    : `outfits/${stableStorageSegment(outfitId)}/cover`;
 
   if (getPersistenceMode() === "supabase") {
     const { sbUploadOutfitAssetFile } = await import("@/lib/store/supabase-db");
@@ -139,7 +139,7 @@ export async function storeOutfitAsset(
 
   const extension = extensionForMime(file.mimeType);
   const fileName = `reference.${extension}`;
-  const relativeDir = join("uploads", "form-options", sanitizeStorageSegment(formId), ...relativeKey.split("/"));
+  const relativeDir = join("uploads", "form-options", stableStorageSegment(formId), ...relativeKey.split("/"));
   const imagePath = writePublicFile(relativeDir, fileName, file.buffer);
   return { imagePath, imageUrl: imagePath };
 }

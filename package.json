@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run lint",
     "test:access-codes": "node scripts/access-code-fingerprint-regression.mjs",
-    "test:catalog": "node --experimental-strip-types --test src/lib/product-catalog.test.ts src/lib/form-customization.test.ts src/lib/validation.test.ts src/lib/outfit-architecture.test.ts src/lib/form-config.test.ts src/lib/form-selection.test.ts"
+    "test:catalog": "node --experimental-strip-types --test src/lib/product-catalog.test.ts src/lib/form-customization.test.ts src/lib/validation.test.ts src/lib/outfit-architecture.test.ts src/lib/form-config.test.ts src/lib/form-selection.test.ts src/lib/form-multi-select-ui.test.ts src/lib/form-option-identity.test.ts src/lib/form-option-upload.test.ts"
   },
   "repository": {
     "type": "git",

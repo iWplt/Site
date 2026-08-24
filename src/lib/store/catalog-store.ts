@@ -22,7 +22,7 @@ import { getPersistenceMode } from "@/lib/persistence";
 import { mutateDb, readDb, type LocalDatabase } from "@/lib/store/local-db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireSupabaseSecretsForWrites } from "@/lib/env";
-import { extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
+import { extensionForMime, stableStorageSegment } from "@/lib/upload-security";
 import { safeSlug } from "@/lib/utils";
 
 const FORM_OPTIONS_BUCKET = "form-options";
@@ -58,7 +58,7 @@ function now() {
 
 function ensureLocalCatalog(db: LocalDatabase) {
   if (!db.product_categories?.length) {
-    db.product_categories = DEFAULT_PRODUCT_CATEGORIES.map((category, index) => ({
+    db.product_categories = DEFAULT_PRODUCT_CATEGORIES.map((category) => ({
       id: `cat-${category.slug}`,
       slug: category.slug,
       name_ar: category.name_ar,
@@ -109,10 +109,10 @@ export async function listCatalogProducts(options?: { resolveImages?: boolean })
     const rows = data ?? [];
     return Promise.all(
       rows.map(async (row) => {
-        const category = row.product_categories as ProductCategory | null;
-        const availability = (row.product_availability ?? []) as ProductAvailability[];
+        const { product_categories, product_availability, ...product } = row;
+        const category = product_categories as ProductCategory | null;
+        const availability = (product_availability ?? []) as ProductAvailability[];
         const image_url = resolveImages ? await resolveCatalogImageUrl(row.image_path) : undefined;
-        const { product_categories: _c, product_availability: _a, ...product } = row;
         return {
           ...(product as CatalogProduct),
           price_iqd: product.price_iqd == null ? null : Number(product.price_iqd),
@@ -445,7 +445,7 @@ export async function createProductCategory(nameAr: string, nameEn?: string) {
 
 export async function saveCatalogProductImage(productId: string, file: { buffer: Buffer; mimeType: string; originalName: string }) {
   const extension = extensionForMime(file.mimeType);
-  const path = `catalog/${sanitizeStorageSegment(productId)}/reference.${extension}`;
+  const path = `catalog/${stableStorageSegment(productId)}/reference.${extension}`;
   if (getPersistenceMode() === "supabase") {
     requireSupabaseSecretsForWrites();
     const admin = createAdminClient();
@@ -460,7 +460,7 @@ export async function saveCatalogProductImage(productId: string, file: { buffer:
   }
   const { writeFileSync, mkdirSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const relativeDir = join("uploads", "form-options", "catalog", sanitizeStorageSegment(productId));
+  const relativeDir = join("uploads", "form-options", "catalog", stableStorageSegment(productId));
   const absoluteDir = join(process.cwd(), "public", relativeDir);
   mkdirSync(absoluteDir, { recursive: true });
   writeFileSync(join(absoluteDir, `reference.${extension}`), file.buffer);

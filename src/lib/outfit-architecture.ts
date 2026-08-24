@@ -1,5 +1,7 @@
 import { fieldIsVisible } from "./form-definition.ts";
+import { isMultiSelectField } from "./form-selection.ts";
 import { optionVisibleForBooking } from "./product-catalog.ts";
+import { reconcileAllowedOptionValues } from "./form-option-identity.ts";
 import type {
   BookingMode,
   CatalogFormAssignment,
@@ -76,26 +78,24 @@ export function ensureCoreProductOrder(order?: string[] | null): CoreProductId[]
 
 export function formEnabledCoreProducts(definition: FormDefinition): CoreProductId[] {
   const fields = definition.sections.flatMap((section) => section.fields);
-  const enabled = CORE_PRODUCT_IDS.filter((product) => {
+  return CORE_PRODUCT_IDS.filter((product) => {
     const field = fields.find((entry) => entry.key === PRODUCT_MODEL_KEYS[product]);
     if (!field) return true;
     const options = field.options ?? [];
     if (!options.length) return true;
     return options.some((option) => option.enabled !== false);
   });
-  return enabled.length ? enabled : [...CORE_PRODUCT_IDS];
 }
 
 export function constrainToEnabledProducts(order: string[] | null | undefined, enabled: CoreProductId[]): CoreProductId[] {
-  const allowed = enabled.length ? enabled : [...CORE_PRODUCT_IDS];
-  return (order ?? []).filter((id): id is CoreProductId => allowed.includes(id as CoreProductId));
+  return (order ?? []).filter((id): id is CoreProductId => enabled.includes(id as CoreProductId));
 }
 
 function membershipFromFormProducts(order: string[] | null | undefined, enabled: CoreProductId[]): CoreProductId[] {
   const constrained = constrainToEnabledProducts(order, enabled);
   if (constrained.length) return constrained;
   if (order?.length) return [];
-  return enabled.length ? [...enabled] : [...CORE_PRODUCT_IDS];
+  return [...enabled];
 }
 
 export function liveOutfitConfig(definition: FormDefinition): OutfitConfig {
@@ -104,7 +104,7 @@ export function liveOutfitConfig(definition: FormDefinition): OutfitConfig {
 
 export function sanitizeOutfitConfig(raw?: OutfitConfig | null, enabledProducts?: CoreProductId[] | null): OutfitConfig {
   const fallback = defaultOutfitConfig();
-  const enabled = enabledProducts?.length ? enabledProducts : [...CORE_PRODUCT_IDS];
+  const enabled = enabledProducts == null ? [...CORE_PRODUCT_IDS] : enabledProducts.filter((id) => CORE_PRODUCT_IDS.includes(id));
   const productOrder = ensureCoreProductOrder(raw?.productOrder);
   const requestedSingle = raw?.singleItemProducts?.length ? raw.singleItemProducts : enabled;
   const singleItemProducts = constrainToEnabledProducts(requestedSingle, enabled);
@@ -158,11 +158,17 @@ function sanitizeProductImages(raw?: FullOutfit["productImages"]): FullOutfit["p
 
 function sanitizeProductSettings(
   raw: FullOutfit["productSettings"],
-  productOrder: CoreProductId[]
+  activeOrder: CoreProductId[]
 ): FullOutfit["productSettings"] {
   if (!raw) return undefined;
+  // Preserve settings for active membership and for valid core keys that may be
+  // temporarily reconciled out of productOrder when a Form Product is disabled.
+  const keepKeys = new Set<CoreProductId>([
+    ...activeOrder,
+    ...CORE_PRODUCT_IDS.filter((id) => Boolean(raw[id]))
+  ]);
   const next: NonNullable<FullOutfit["productSettings"]> = {};
-  for (const productId of productOrder) {
+  for (const productId of keepKeys) {
     const entry = raw[productId];
     if (!entry) continue;
     const allowedOptions: NonNullable<OutfitProductSettings["allowedOptions"]> = {};
@@ -189,7 +195,10 @@ function sanitizeFullOutfit(
 ): FullOutfit | null {
   const name = outfit.name?.trim();
   if (!name) return null;
-  const productOrder = membershipFromFormProducts(outfit.productOrder ?? fallbackOrder, enabled);
+  const requested = (outfit.productOrder ?? fallbackOrder).filter((id): id is CoreProductId =>
+    CORE_PRODUCT_IDS.includes(id as CoreProductId)
+  );
+  const productOrder = membershipFromFormProducts(requested.length ? requested : fallbackOrder, enabled);
   return {
     id: outfit.id?.trim() || `outfit-${index + 1}`,
     name,
@@ -200,6 +209,38 @@ function sanitizeFullOutfit(
     productOrder,
     productImages: sanitizeProductImages(outfit.productImages),
     productSettings: sanitizeProductSettings(outfit.productSettings, productOrder)
+  };
+}
+
+/** Reconcile outfit allowed options against the current Form Product option lists (merged definition). */
+export function reconcileOutfitConfigAgainstForm(definition: FormDefinition, config: OutfitConfig): OutfitConfig {
+  const enabled = formEnabledCoreProducts(definition);
+  const base = sanitizeOutfitConfig(config, enabled);
+  return {
+    ...base,
+    fullOutfits: base.fullOutfits.map((outfit) => ({
+      ...outfit,
+      productSettings: (() => {
+        if (!outfit.productSettings) return undefined;
+        const next: NonNullable<FullOutfit["productSettings"]> = {};
+        for (const [productId, entry] of Object.entries(outfit.productSettings) as Array<
+          [CoreProductId, NonNullable<FullOutfit["productSettings"]>[CoreProductId]]
+        >) {
+          if (!entry) continue;
+          const allowedOptions = reconcileAllowedOptionValues(definition, entry.allowedOptions);
+          const hiddenFields = (entry.hiddenFields ?? []).filter((key) =>
+            definition.sections.some((section) => section.fields.some((field) => field.key === key))
+          );
+          if (allowedOptions || hiddenFields.length) {
+            next[productId] = {
+              allowedOptions,
+              hiddenFields: hiddenFields.length ? hiddenFields : undefined
+            };
+          }
+        }
+        return Object.keys(next).length ? next : undefined;
+      })()
+    }))
   };
 }
 
@@ -317,8 +358,9 @@ function pruneInvalidChoiceAnswers(definition: FormDefinition, answers: Record<s
         delete next[field.key];
         continue;
       }
-      const multi = field.selectionMode === "multiple" || field.type === "checkbox";
-      next[field.key] = multi ? selected : selected[0];
+      // Must use isMultiSelectField so selectionMode:"multiple" on image_choice/radio
+      // is never collapsed back to a single string (that bug made the student UI look single-select).
+      next[field.key] = isMultiSelectField(field) ? selected : selected[0];
     }
   }
   return next;

@@ -9,11 +9,18 @@ import {
   optionsForBookingContext,
   outfitProductDisplayImage,
   productIsSelected,
+  reconcileOutfitConfigAgainstForm,
   resolveOutfitAnswers,
   resolveSelectedOutfit,
   sanitizeOutfitConfig
 } from "./outfit-architecture.ts";
-import type { FormDefinition } from "./types.ts";
+import { mergeCatalogIntoDefinition } from "./product-catalog.ts";
+import {
+  catalogProductIdFromOptionRef,
+  optionMatchesRef,
+  reconcileAllowedOptionValues
+} from "./form-option-identity.ts";
+import type { CatalogProduct, FormDefinition, ProductCategory } from "./types.ts";
 
 function keys(definition: FormDefinition, sectionId: string) {
   return definition.sections.find((section) => section.id === sectionId)?.fields.map((field) => field.key) ?? [];
@@ -331,6 +338,18 @@ test("disabled form products are not selectable inside an outfit", () => {
   assert.deepEqual(single.selected_products, []);
 });
 
+test("disabling every form product does not resurrect robe sash cap", () => {
+  let source = defaultWarkaFormDefinition;
+  for (const key of ["robe_model", "sash_type", "cap_type"] as const) {
+    source = withDisabledProduct(source, key);
+  }
+  const live = applyOutfitArchitecture(source);
+  assert.deepEqual(formEnabledCoreProducts(live), []);
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, []);
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set", selected_products: ["robe", "sash", "cap"] });
+  assert.deepEqual(answers.selected_products, []);
+});
+
 test("full outfit subset stays explicit when all form products remain enabled", () => {
   const definition: FormDefinition = {
     ...defaultWarkaFormDefinition,
@@ -407,4 +426,257 @@ test("full outfit hides customization fields configured as hidden for the outfit
   assert.equal(fieldVisibleForBookingContext(notes!, live, fullAnswers), false);
   const singleAnswers = resolveOutfitAnswers(live, { booking_type: "single_pieces", selected_products: ["robe"] });
   assert.equal(fieldVisibleForBookingContext(notes!, live, singleAnswers), true);
+});
+
+test("A: enabled Form Product can be added to an Outfit", () => {
+  const live = applyOutfitArchitecture(defaultWarkaFormDefinition);
+  const enabled = formEnabledCoreProducts(live);
+  assert.ok(enabled.includes("robe"));
+  const config = sanitizeOutfitConfig(
+    {
+      fullOutfits: [{ id: "american", name: "زي أمريكي", enabled: true, productOrder: ["robe"] }],
+      singleItemEnabled: true,
+      singleItemProducts: enabled,
+      productOrder: enabled
+    },
+    enabled
+  );
+  assert.deepEqual(config.fullOutfits[0]?.productOrder, ["robe"]);
+});
+
+test("B: disabled Form Product cannot be added to an Outfit", () => {
+  const source = withDisabledProduct(defaultWarkaFormDefinition, "sash_type");
+  const live = applyOutfitArchitecture(source);
+  const enabled = formEnabledCoreProducts(live);
+  assert.equal(enabled.includes("sash"), false);
+  const config = sanitizeOutfitConfig(
+    {
+      fullOutfits: [{ id: "american", name: "زي أمريكي", enabled: true, productOrder: ["robe", "sash", "cap"] }],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    },
+    enabled
+  );
+  assert.equal(config.fullOutfits[0]?.productOrder?.includes("sash"), false);
+});
+
+test("C: existing valid Outfit Product still loads", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "american",
+          name: "زي أمريكي",
+          enabled: true,
+          productOrder: ["robe", "sash"],
+          productImages: { robe: { imageUrl: "/warka/robe-american.webp" } },
+          productSettings: { robe: { allowedOptions: { robe_model: ["american"] } } }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, ["robe", "sash"]);
+  assert.equal(outfitProductDisplayImage(live.outfitConfig?.fullOutfits[0], "robe"), "/warka/robe-american.webp");
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productSettings?.robe?.allowedOptions?.robe_model, ["american"]);
+});
+
+test("D: stale/invalid Outfit Product reference does not crash the editor", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "american",
+          name: "زي أمريكي",
+          enabled: true,
+          productOrder: ["robe", "ghost-product", "not-a-product"] as unknown as Array<"robe" | "sash" | "cap">,
+          productSettings: {
+            robe: { allowedOptions: { robe_model: ["american", "missing-model"] } }
+          }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  assert.doesNotThrow(() => applyOutfitArchitecture(definition));
+  const live = applyOutfitArchitecture(definition);
+  assert.deepEqual(live.outfitConfig?.fullOutfits[0]?.productOrder, ["robe"]);
+  const reconciled = reconcileOutfitConfigAgainstForm(live, live.outfitConfig!);
+  assert.deepEqual(reconciled.fullOutfits[0]?.productSettings?.robe?.allowedOptions?.robe_model, ["american"]);
+});
+
+test("E/F: outfit-specific allowed options resolve for multiple option groups", () => {
+  const robeField = defaultWarkaFormDefinition.sections.find((section) => section.id === "robe")?.fields.find((field) => field.key === "robe_model");
+  const values = (robeField?.options ?? []).map((option) => option.value);
+  assert.ok(values.length >= 2);
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "american",
+          name: "زي أمريكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productSettings: {
+            robe: { allowedOptions: { robe_model: [values[0]!, values[1]!] } }
+          }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const answers = { booking_type: "full_set", full_outfit_id: "american", selected_products: ["robe", "sash", "cap"] };
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "robe_model");
+  const options = optionsForBookingContext(field!, live, answers);
+  assert.equal(options.length, 2);
+  assert.deepEqual(
+    options.map((option) => option.value).sort(),
+    [values[0]!, values[1]!].sort()
+  );
+});
+
+test("G: outfit-specific product image is preserved and does not replace form models", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "american",
+          name: "زي أمريكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productImages: {
+            robe: { imagePath: "outfits/robe.webp", imageUrl: "/outfit-robe.webp" },
+            sash: { imageUrl: "/outfit-sash.webp" },
+            cap: { imageUrl: "/outfit-cap.webp" }
+          }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const outfit = live.outfitConfig?.fullOutfits[0];
+  assert.equal(outfitProductDisplayImage(outfit, "robe"), "/outfit-robe.webp");
+  assert.equal(outfitProductDisplayImage(outfit, "sash"), "/outfit-sash.webp");
+  assert.equal(outfitProductDisplayImage(outfit, "cap"), "/outfit-cap.webp");
+  const formModel = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_model")?.options?.[0];
+  assert.notEqual(formModel?.imageUrl, "/outfit-robe.webp");
+});
+
+test("H: Full Outfit uses Outfit Products membership", () => {
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [{ id: "robe-only", name: "روب فقط", enabled: true, productOrder: ["robe"] }],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "robe-only", selected_products: ["robe", "sash", "cap"] });
+  assert.deepEqual(answers.selected_products, ["robe"]);
+  assert.equal(productIsSelected(answers, "robe"), true);
+  assert.equal(productIsSelected(answers, "sash"), false);
+});
+
+test("I: Single Item uses Form Products only (ignores outfit membership/settings)", () => {
+  const robeField = defaultWarkaFormDefinition.sections.find((section) => section.id === "robe")?.fields.find((field) => field.key === "robe_model");
+  const modelValues = (robeField?.options ?? []).map((option) => option.value);
+  const definition: FormDefinition = {
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "royal",
+          name: "زي ملكي",
+          enabled: true,
+          productOrder: ["robe"],
+          productSettings: { robe: { allowedOptions: { robe_model: [modelValues[0]!] }, hiddenFields: ["robe_notes"] } }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  };
+  const live = applyOutfitArchitecture(definition);
+  const answers = resolveOutfitAnswers(live, { booking_type: "single_pieces", selected_products: ["robe", "sash"] });
+  assert.equal(isSingleItemBooking(live, answers), true);
+  assert.deepEqual(answers.selected_products, ["robe", "sash"]);
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "robe_model");
+  assert.ok(optionsForBookingContext(field!, live, answers).length >= 2);
+  const notes = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_notes");
+  assert.equal(fieldVisibleForBookingContext(notes!, live, answers), true);
+});
+
+test("J: catalog Form Product options are outfit-resolvable without الخيار غير موجود identity mismatch", () => {
+  const categories: ProductCategory[] = [{ id: "cat-robe", slug: "robe", name_ar: "روب", sort_order: 10 }];
+  const catalogProduct: CatalogProduct = {
+    id: "prod-american-robe",
+    category_id: "cat-robe",
+    name_ar: "روب أمريكي",
+    active: true,
+    archived: false,
+    sort_order: 1,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    availability: [{ id: "a1", product_id: "prod-american-robe", scope: "forms", form_id: "form-1" }]
+  };
+  const merged = mergeCatalogIntoDefinition(
+    {
+      ...defaultWarkaFormDefinition,
+      outfitConfig: {
+        fullOutfits: [
+          {
+            id: "american",
+            name: "زي أمريكي",
+            enabled: true,
+            productOrder: ["robe", "sash", "cap"],
+            productSettings: {
+              robe: { allowedOptions: { robe_model: ["prod-american-robe"] } }
+            }
+          }
+        ],
+        singleItemEnabled: true,
+        singleItemProducts: ["robe", "sash", "cap"],
+        productOrder: ["robe", "sash", "cap"],
+        catalogAssignments: {
+          "prod-american-robe": { bookingModes: ["full_set", "single_pieces"], hidden: false }
+        }
+      }
+    },
+    [catalogProduct],
+    categories
+  );
+  const live = applyOutfitArchitecture(merged);
+  const option = live.sections
+    .flatMap((section) => section.fields)
+    .find((field) => field.key === "robe_model")
+    ?.options?.find((entry) => entry.catalogProductId === "prod-american-robe");
+  assert.ok(option);
+  assert.equal(optionMatchesRef(option!, "catalog-prod-american-robe"), true);
+  assert.equal(optionMatchesRef(option!, "prod-american-robe"), true);
+  assert.equal(catalogProductIdFromOptionRef(option!.id), "prod-american-robe");
+  const answers = { booking_type: "full_set", full_outfit_id: "american", selected_products: ["robe", "sash", "cap"] };
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "robe_model");
+  const options = optionsForBookingContext(field!, live, answers);
+  assert.equal(options.some((entry) => entry.value === "prod-american-robe"), true);
+  const reconciled = reconcileAllowedOptionValues(live, { robe_model: ["prod-american-robe", "stale-gone"] });
+  assert.deepEqual(reconciled?.robe_model, ["prod-american-robe"]);
 });

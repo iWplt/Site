@@ -21,7 +21,12 @@ import {
   resolveOutfitAnswers,
   resolveSelectedOutfit
 } from "@/lib/outfit-architecture";
-import { choiceSelectionError, isMultiSelectField, selectionBounds } from "@/lib/form-selection";
+import {
+  choiceSelectionError,
+  isMultiSelectField,
+  selectionBounds,
+  toggleChoiceSelection
+} from "@/lib/form-selection";
 import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -117,7 +122,11 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
       const value = answers[field.key];
       const isUpload = ["image_upload", "file_upload"].includes(field.type);
       if (isUpload) {
-        const uploadError = requiredUploadError(files[field.key], field.required);
+        const uploadError = requiredUploadError(
+          files[field.key],
+          field.required,
+          field.uploadMode === "multiple" ? field.maxFiles : 1
+        );
         if (uploadError) nextErrors[field.key] = uploadError;
         continue;
       }
@@ -358,6 +367,7 @@ function FieldRenderer({
   const choiceOptions = contextOptions ?? field.options;
   const multiSelect = isMultiSelectField(field);
   const bounds = selectionBounds(field);
+  const [maxHint, setMaxHint] = useState<string>();
   const lockedOption =
     choiceOptions?.find((option) => asStringList(value).includes(option.value) || option.value === value) ?? choiceOptions?.[0];
   return (
@@ -366,11 +376,12 @@ function FieldRenderer({
       {field.description ? <p className="mb-3 text-sm leading-7 text-[var(--muted)]">{field.description}</p> : null}
       {multiSelect ? (
         <p className="mb-3 text-xs font-bold text-[var(--muted)]">
-          اختيار متعدد
+          اختيار متعدد — يمكنك تحديد أكثر من خيار
           {bounds.max !== undefined ? ` · الحد الأقصى ${bounds.max}` : ""}
           {bounds.min > 0 ? ` · الحد الأدنى ${bounds.min}` : ""}
         </p>
       ) : null}
+      {maxHint ? <p className="mb-3 text-xs font-bold text-[var(--danger)]">{maxHint}</p> : null}
       {field.locked && isUniformProductKey(field.key) ? (
         <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
           <LockKeyhole size={13} /> اختيار موحد للدفعة
@@ -407,7 +418,7 @@ function FieldRenderer({
         />
       ) : null}
       {field.type === "checkbox" && choiceOptions ? (
-        <div className="grid gap-3">
+        <div className="grid gap-3" role="group" aria-label={field.label}>
           {choiceOptions.map((option) => {
             const selected = asStringList(value).includes(option.value);
             const locked = Boolean(field.locked || productSelectionLocked);
@@ -416,13 +427,17 @@ function FieldRenderer({
                 key={option.id}
                 type="button"
                 disabled={locked}
-                aria-pressed={selected}
+                role="checkbox"
+                aria-checked={selected}
                 onClick={() => {
                   if (locked) return;
-                  const current = asStringList(value);
-                  const next = selected ? current.filter((entry) => entry !== option.value) : [...current, option.value];
-                  if (!selected && bounds.max !== undefined && next.length > bounds.max) return;
-                  onChange(next);
+                  const result = toggleChoiceSelection(field, value, option.value);
+                  if (result.blockedByMax) {
+                    setMaxHint(bounds.max !== undefined ? `الحد الأقصى للاختيار هو ${bounds.max}.` : "تم بلوغ الحد الأقصى.");
+                    return;
+                  }
+                  setMaxHint(undefined);
+                  onChange(result.value ?? []);
                 }}
                 className={cn(
                   "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
@@ -499,6 +514,9 @@ function FieldRenderer({
             "grid gap-3",
             field.showOptionImages || field.type === "image_choice" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
           )}
+          role={multiSelect ? "group" : "radiogroup"}
+          aria-label={field.label}
+          aria-multiselectable={multiSelect || undefined}
         >
           {choiceOptions
             .flatMap((option, optionIndex) => {
@@ -513,17 +531,17 @@ function FieldRenderer({
                     key={child.id}
                     type="button"
                     disabled={field.locked}
-                    aria-pressed={selected}
+                    role={multiSelect ? "checkbox" : "radio"}
+                    aria-checked={selected}
                     onClick={() => {
                       if (field.locked) return;
-                      if (!multiSelect) {
-                        onChange(child.value);
+                      const result = toggleChoiceSelection(field, value, child.value);
+                      if (result.blockedByMax) {
+                        setMaxHint(bounds.max !== undefined ? `الحد الأقصى للاختيار هو ${bounds.max}.` : "تم بلوغ الحد الأقصى.");
                         return;
                       }
-                      const current = asStringList(value);
-                      const next = selected ? current.filter((entry) => entry !== child.value) : [...current, child.value];
-                      if (!selected && bounds.max !== undefined && next.length > bounds.max) return;
-                      onChange(next);
+                      setMaxHint(undefined);
+                      onChange(result.value ?? (multiSelect ? [] : ""));
                     }}
                     className={cn(
                       "overflow-hidden rounded-[1.4rem] border bg-[var(--paper)] text-right shadow-[0_10px_30px_rgba(37,43,28,0.05)] transition",
@@ -554,6 +572,7 @@ function FieldRenderer({
                             multiSelect ? "rounded-md" : "rounded-full",
                             selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
                           )}
+                          aria-hidden
                         >
                           {selected ? <Check size={12} /> : null}
                         </span>

@@ -6,7 +6,7 @@ import type { AppUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { requireSupabaseSecretsForWrites } from "@/lib/env";
-import { assertOwnedBookingPath, extensionForMime, sanitizeStorageSegment } from "@/lib/upload-security";
+import { assertOwnedBookingPath, extensionForMime, sanitizeStorageSegment, stableStorageSegment } from "@/lib/upload-security";
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { normalizeLiveFormDefinition } from "@/lib/form-live";
 import {
@@ -31,6 +31,7 @@ import {
   type UniformSelectionMap
 } from "@/lib/form-uniform";
 import { resolveOutfitAnswers, applyOutfitArchitecture, sanitizeOutfitConfig, normalizeCatalogAssignment } from "@/lib/outfit-architecture";
+import { catalogProductIdFromOptionRef, isArchitectureOptionFieldKey, optionMatchesRef } from "@/lib/form-option-identity";
 import { withCatalogDefinition } from "@/lib/store/catalog-store";
 import { toFormSummary } from "@/lib/form-summary";
 import type {
@@ -666,8 +667,10 @@ export async function sbGetAdminForm(
   const row = data as BookingFormRow;
   const batchIds = user.role === "REPRESENTATIVE" ? await resolveRepresentativeBatchIds(admin, user) : [];
   if (!canAccessFormRow(user, row, batchIds)) return null;
-  if (options?.resolveImages) return resolveFormRowImages(row);
-  return mapFormRow(row);
+  const form = options?.resolveImages ? await resolveFormRowImages(row) : mapFormRow(row);
+  // Products / outfits / customizations need the same Form Product option identity students see.
+  if (options?.resolveImages) return withCatalogDefinition(form);
+  return form;
 }
 
 export async function sbUpdateFormGeneral(
@@ -2000,7 +2003,7 @@ function updateOptionsList(
   updater: (option: FormOption) => FormOption
 ): FormOption[] {
   return options.map((option) => {
-    if (option.id === optionId) return updater(option);
+    if (optionMatchesRef(option, optionId)) return updater(option);
     if (option.children?.length) return { ...option, children: updateOptionsList(option.children, optionId, updater) };
     return option;
   });
@@ -2128,6 +2131,9 @@ export async function sbUpdateFormOption(
   patch: FormOptionPatch
 ): Promise<FormOption> {
   requireSupabaseSecretsForWrites();
+  if (isArchitectureOptionFieldKey(fieldKey)) {
+    throw new Error("هذا الخيار يُدار من إعدادات الزي وليس من قائمة الخيارات.");
+  }
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
 
@@ -2136,13 +2142,41 @@ export async function sbUpdateFormOption(
     updatedOption = { ...option, ...patch };
     return updatedOption;
   });
-  if (!updatedOption) throw new Error("الخيار غير موجود.");
+  if (updatedOption) {
+    const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+    if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث الخيار."));
+    await sbAudit(admin, "FORM_OPTION_UPDATED", "booking_form", formId, undefined, { fieldKey, optionId, patch });
+    return updatedOption;
+  }
 
-  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
-  if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث الخيار."));
+  const catalogId =
+    catalogProductIdFromOptionRef(optionId) ??
+    (definition.outfitConfig?.catalogAssignments && optionId in definition.outfitConfig.catalogAssignments
+      ? optionId
+      : undefined);
 
-  await sbAudit(admin, "FORM_OPTION_UPDATED", "booking_form", formId, undefined, { fieldKey, optionId, patch });
-  return updatedOption;
+  if (catalogId) {
+    if (typeof patch.enabled === "boolean") {
+      const current = normalizeCatalogAssignment(definition.outfitConfig?.catalogAssignments?.[catalogId]);
+      await sbPatchFormCatalogAssignment(formId, catalogId, {
+        ...current,
+        hidden: !patch.enabled
+      });
+    }
+    return {
+      id: `catalog-${catalogId}`,
+      value: catalogId,
+      label: patch.label ?? catalogId,
+      description: patch.description,
+      enabled: patch.enabled,
+      imagePath: patch.imagePath,
+      imageUrl: patch.imageUrl,
+      imageAlt: patch.imageAlt,
+      catalogProductId: catalogId
+    };
+  }
+
+  throw new Error("الخيار غير موجود.");
 }
 
 export type FormFieldMetaPatch = Partial<{
@@ -2456,11 +2490,14 @@ export async function sbUploadOptionImage(
   file: UploadFileInput
 ): Promise<FormOption> {
   requireSupabaseSecretsForWrites();
+  if (isArchitectureOptionFieldKey(fieldKey)) {
+    throw new Error("هذا الخيار يُدار من إعدادات الزي وليس من قائمة الخيارات.");
+  }
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
 
   const extension = extensionFromNameOrMime(file.originalName, file.mimeType);
-  const path = `${sanitizeStorageSegment(formId)}/${sanitizeStorageSegment(fieldKey)}/${sanitizeStorageSegment(optionId)}/reference.${extension}`;
+  const path = `${stableStorageSegment(formId)}/${stableStorageSegment(fieldKey)}/${stableStorageSegment(optionId)}/reference.${extension}`;
 
   const { error: uploadError } = await admin.storage
     .from(FORM_OPTIONS_BUCKET)
@@ -2474,16 +2511,25 @@ export async function sbUploadOptionImage(
     updatedOption = { ...option, imagePath: path, imageUrl };
     return updatedOption;
   });
-  if (!updatedOption) throw new Error("الخيار غير موجود.");
+  if (updatedOption) {
+    const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
+    if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ الصورة."));
+    return updatedOption;
+  }
 
-  const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
-  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ الصورة."));
+  const catalogId = catalogProductIdFromOptionRef(optionId);
+  if (catalogId) {
+    throw new Error("صورة منتج الكتالوج تُرفع من إدارة منتجات النموذج أو الكتالوج، وليس من خيارات الحقل.");
+  }
 
-  return updatedOption;
+  throw new Error("الخيار غير موجود.");
 }
 
 export async function sbDeleteOptionImage(formId: string, fieldKey: string, optionId: string): Promise<FormOption> {
   requireSupabaseSecretsForWrites();
+  if (isArchitectureOptionFieldKey(fieldKey)) {
+    throw new Error("هذا الخيار يُدار من إعدادات الزي وليس من قائمة الخيارات.");
+  }
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
 
@@ -2494,7 +2540,12 @@ export async function sbDeleteOptionImage(formId: string, fieldKey: string, opti
     updatedOption = { ...option, imagePath: undefined, imageUrl: undefined };
     return updatedOption;
   });
-  if (!updatedOption) throw new Error("الخيار غير موجود.");
+  if (!updatedOption) {
+    if (catalogProductIdFromOptionRef(optionId)) {
+      throw new Error("صورة منتج الكتالوج تُدار من منتجات النموذج أو الكتالوج.");
+    }
+    throw new Error("الخيار غير موجود.");
+  }
 
   if (previousPath) {
     await admin.storage.from(FORM_OPTIONS_BUCKET).remove([previousPath]).catch(() => undefined);
@@ -2514,7 +2565,7 @@ export async function sbUploadOutfitAssetFile(
   requireSupabaseSecretsForWrites();
   const admin = createAdminClient();
   const extension = extensionFromNameOrMime(file.originalName, file.mimeType);
-  const path = `${sanitizeStorageSegment(formId)}/${relativeKey}/reference.${extension}`;
+  const path = `${stableStorageSegment(formId)}/${relativeKey}/reference.${extension}`;
   const { error } = await admin.storage.from(FORM_OPTIONS_BUCKET).upload(path, file.buffer, {
     contentType: file.mimeType,
     upsert: true

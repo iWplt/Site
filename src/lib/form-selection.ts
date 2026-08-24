@@ -59,3 +59,46 @@ export function choiceSelectionError(field: FormField, value: unknown): string |
   }
   return undefined;
 }
+
+export type ChoiceToggleResult = {
+  /** Next answer value: string for single, string[] for multiple, undefined when cleared. */
+  value: string | string[] | undefined;
+  /** True when an add was blocked because maxSelections was reached. */
+  blockedByMax: boolean;
+};
+
+/**
+ * Pure toggle used by the student wizard.
+ * Single: replaces selection (radio).
+ * Multiple: add/remove without wiping other selected IDs (checkbox).
+ * Option value "none" is exclusive when present among multi selections.
+ */
+export function toggleChoiceSelection(field: FormField, current: unknown, optionValue: string): ChoiceToggleResult {
+  const option = String(optionValue);
+  if (!option) return { value: normalizeChoiceAnswer(field, current), blockedByMax: false };
+
+  if (!isMultiSelectField(field)) {
+    return { value: option, blockedByMax: false };
+  }
+
+  const { max } = selectionBounds(field);
+  let selected = asStringList(current);
+  const already = selected.includes(option);
+
+  if (already) {
+    selected = selected.filter((entry) => entry !== option);
+    return { value: selected.length ? selected : undefined, blockedByMax: false };
+  }
+
+  if (max !== undefined && selected.length >= max) {
+    return { value: selected.length ? selected : undefined, blockedByMax: true };
+  }
+
+  if (option === "none") {
+    selected = ["none"];
+  } else {
+    selected = [...selected.filter((entry) => entry !== "none"), option];
+  }
+
+  return { value: selected, blockedByMax: false };
+}

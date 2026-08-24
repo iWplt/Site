@@ -7,14 +7,23 @@ import {
   addFormOptionAction,
   deleteOutfitImageAction,
   reorderFormOptionsAction,
+  saveFormProductAssignmentAction,
   updateFormFieldMetaAction,
   updateFormOptionAction,
   updateFormOutfitConfigAction,
   uploadOutfitImageAction
 } from "@/app/actions";
 import { Button, Card, FieldLabel, LinkButton, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
-import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, constrainToEnabledProducts, formEnabledCoreProducts, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
 import { OUTFIT_PRESETS, PRODUCT_MODEL_KEYS } from "@/lib/form-config";
+import {
+  CORE_PRODUCT_IDS,
+  CORE_PRODUCT_LABELS,
+  constrainToEnabledProducts,
+  formEnabledCoreProducts,
+  normalizeCatalogAssignment,
+  reconcileOutfitConfigAgainstForm,
+  sanitizeOutfitConfig
+} from "@/lib/outfit-architecture";
 import type {
   CoreProductId,
   FormDefinition,
@@ -39,7 +48,12 @@ export function FormOutfitWorkspace({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [config, setConfig] = useState<OutfitConfig>(() => sanitizeOutfitConfig(definition.outfitConfig, formEnabledCoreProducts(definition)));
+  const [config, setConfig] = useState<OutfitConfig>(() =>
+    reconcileOutfitConfigAgainstForm(
+      definition,
+      sanitizeOutfitConfig(definition.outfitConfig, formEnabledCoreProducts(definition))
+    )
+  );
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -57,12 +71,15 @@ export function FormOutfitWorkspace({
   }, [definition.sections]);
 
   function liveConfig(next: OutfitConfig) {
-    return sanitizeOutfitConfig(
-      {
-        ...next,
-        catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
-      },
-      enabledProducts
+    return reconcileOutfitConfigAgainstForm(
+      definition,
+      sanitizeOutfitConfig(
+        {
+          ...next,
+          catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+        },
+        enabledProducts
+      )
     );
   }
 
@@ -75,11 +92,15 @@ export function FormOutfitWorkspace({
   function saveConfig() {
     if (!canManage) return;
     startTransition(async () => {
-      await updateFormOutfitConfigAction(formId, liveConfig(config));
-      setDirty(false);
-      setSaved(true);
-      setMessage("✓ تم الحفظ");
-      router.refresh();
+      try {
+        await updateFormOutfitConfigAction(formId, liveConfig(config));
+        setDirty(false);
+        setSaved(true);
+        setMessage("✓ تم الحفظ");
+        router.refresh();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تعذر حفظ إعدادات الزي.");
+      }
     });
   }
 
@@ -135,7 +156,8 @@ export function FormOutfitWorkspace({
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">منتجات النموذج</h2>
             <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
-              الأزياء تختار من منتجات هذا النموذج المفعّلة فقط. إنشاء المنتجات وتفعيلها وموديلاتها وتخصيصاتها من تبويب المنتجات.
+              الأزياء تختار من منتجات هذا النموذج المرتبطة بالكتالوج فقط. إنشاء المنتجات في الكتالوج، وربطها وتفعيلها وضبط
+              موديلاتها وتخصيصاتها من تبويب المنتجات — دون قائمة منتجات ثانية.
             </p>
             <ul className="mt-3 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
               {enabledProducts.map((product) => (
@@ -338,6 +360,7 @@ export function FormOutfitWorkspace({
               canManage={canManage}
               pending={pending}
               formId={formId}
+              definition={definition}
               expandCustomizations={focus === "customizations"}
               showModelEditor={focus === "products"}
               singleItemVisible={config.singleItemProducts.includes(product)}
@@ -376,30 +399,38 @@ function OutfitImageSlot({
   function upload(file: File | undefined) {
     if (!file) return;
     startTransition(async () => {
-      const body = new FormData();
-      body.set("formId", formId);
-      body.set("outfitId", outfitId);
-      if (productId) body.set("productId", productId);
-      body.set("file", file);
-      const result = await uploadOutfitImageAction(body);
-      if (result.error) {
-        setMessage(result.error);
-        return;
+      try {
+        const body = new FormData();
+        body.set("formId", formId);
+        body.set("outfitId", outfitId);
+        if (productId) body.set("productId", productId);
+        body.set("file", file);
+        const result = await uploadOutfitImageAction(body);
+        if (!result.success) {
+          setMessage(result.error);
+          return;
+        }
+        onSaved({ imagePath: result.data?.imagePath, imageUrl: result.data?.imageUrl });
+        setMessage("تم رفع الصورة.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
       }
-      onSaved({ imagePath: result.imagePath, imageUrl: result.imageUrl });
-      setMessage("تم رفع الصورة.");
     });
   }
 
   function remove() {
     startTransition(async () => {
-      const result = await deleteOutfitImageAction(formId, outfitId, productId);
-      if (result.error) {
-        setMessage(result.error);
-        return;
+      try {
+        const result = await deleteOutfitImageAction(formId, outfitId, productId);
+        if (!result.success) {
+          setMessage(result.error);
+          return;
+        }
+        onSaved(undefined);
+        setMessage("تم حذف الصورة.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تعذر حذف الصورة.");
       }
-      onSaved(undefined);
-      setMessage("تم حذف الصورة.");
     });
   }
 
@@ -553,27 +584,56 @@ function OutfitEditor({
         />
       </div>
       <p className="mt-3 text-sm font-bold text-[var(--olive)]">منتجات النموذج المشمولة في هذا الزي</p>
-      <p className="mt-1 text-xs leading-6 text-[var(--muted)]">اختر من المنتجات المفعّلة في هذا النموذج فقط. لا يُنشئ الزي منتجات جديدة.</p>
+      <p className="mt-1 text-xs leading-6 text-[var(--muted)]">
+        المصدر: منتجات النموذج المفعّلة فقط (نفس هوية تبويب المنتجات). لا يُنشئ الزي منتجات جديدة ولا يقرأ الكتالوج العام مباشرة.
+      </p>
       <div className="mt-2 flex flex-wrap gap-2">
         {enabledProducts.map((product) => {
           const checked = selectedProducts.includes(product);
+          const modelField = fieldsByKey.get(PRODUCT_MODEL_KEYS[product]);
+          const models = (modelField?.options ?? []).filter((option) => option.enabled !== false);
+          const preview = models.find((option) => option.imageUrl)?.imageUrl;
           return (
-            <label key={product} className="inline-flex items-center gap-2 rounded-full bg-[#3f472d0d] px-4 py-2 text-sm font-bold">
+            <label
+              key={product}
+              className={cn(
+                "inline-flex min-w-[10rem] flex-1 items-start gap-2 rounded-2xl border px-3 py-2 text-sm font-bold sm:max-w-[16rem]",
+                checked ? "border-[var(--olive)] bg-[#3f472d0d]" : "border-[var(--border)] bg-white/80"
+              )}
+            >
               <input
                 type="checkbox"
+                className="mt-1"
                 checked={checked}
                 disabled={disabled || (checked && selectedProducts.length <= 1)}
                 onChange={() => {
                   const next = checked ? selectedProducts.filter((id) => id !== product) : [...selectedProducts, product];
                   if (!next.length) return;
+                  if (checked && next.length === selectedProducts.length) return;
                   onChange({ productOrder: next });
                 }}
               />
-              {CORE_PRODUCT_LABELS[product]}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={preview} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                  ) : (
+                    <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#3f472d12] text-[10px] text-[var(--muted)]">—</span>
+                  )}
+                  <span className="text-[var(--olive-dark)]">{CORE_PRODUCT_LABELS[product]}</span>
+                </span>
+                <span className="mt-1 block text-[11px] font-bold text-[var(--muted)]">
+                  {checked ? "مضاف إلى الزي" : "إضافة إلى هذا الزي"} · {models.length} خيار
+                </span>
+              </span>
             </label>
           );
         })}
       </div>
+      {!enabledProducts.length ? (
+        <p className="mt-2 text-sm font-bold text-[var(--danger)]">لا توجد منتجات مفعّلة في منتجات النموذج. فعّل منتجاً من تبويب المنتجات أولاً.</p>
+      ) : null}
       <ol className="mt-2 grid gap-2">
         {selectedProducts.map((productId, index, list) => (
           <li key={productId} className="grid gap-2 rounded-xl bg-white/80 p-2">
@@ -715,6 +775,7 @@ function ProductConfigCard({
   canManage,
   pending,
   formId,
+  definition,
   expandCustomizations,
   showModelEditor,
   singleItemVisible,
@@ -726,6 +787,7 @@ function ProductConfigCard({
   canManage: boolean;
   pending: boolean;
   formId: string;
+  definition: FormDefinition;
   expandCustomizations: boolean;
   showModelEditor: boolean;
   singleItemVisible: boolean;
@@ -736,12 +798,32 @@ function ProductConfigCard({
   const [modelMessage, setModelMessage] = useState<string>();
   const [dragId, setDragId] = useState<string | null>(null);
   const options = field?.options ?? [];
-  const visibleModels = options.filter((option) => option.enabled !== false);
+  const visibleModels = options.filter((option) => option.enabled !== false && !(option.catalogProductId && definition.outfitConfig?.catalogAssignments?.[option.catalogProductId]?.hidden));
   const customizations = extraFields.filter((entry) => entry.key !== PRODUCT_MODEL_KEYS[product] && entry.type !== "info");
   const visible = visibleModels.length > 0;
 
   function startSafe(fn: () => Promise<void>) {
-    void fn();
+    void fn().catch((error) => {
+      setModelMessage(error instanceof Error ? error.message : "تعذر تنفيذ العملية.");
+    });
+  }
+
+  async function saveFieldMeta(
+    fieldKey: string,
+    patch: {
+      required?: boolean;
+      selectionMode?: "single" | "multiple";
+      minSelections?: number | null;
+      maxSelections?: number | null;
+    }
+  ) {
+    const result = await updateFormFieldMetaAction(formId, fieldKey, patch);
+    if (!result.success) {
+      setModelMessage(result.error);
+      throw new Error(result.error);
+    }
+    setModelMessage("✓ تم حفظ إعدادات الاختيار");
+    onRefresh();
   }
 
   function persistOrder(next: FormOption[]) {
@@ -764,10 +846,25 @@ function ProductConfigCard({
     persistOrder(next);
   }
 
+  async function setOptionEnabled(option: FormOption, enabled: boolean) {
+    if (!field || !canManage) return;
+    if (option.catalogProductId) {
+      const assignment = normalizeCatalogAssignment(definition.outfitConfig?.catalogAssignments?.[option.catalogProductId]);
+      const result = await saveFormProductAssignmentAction(formId, option.catalogProductId, {
+        ...assignment,
+        hidden: !enabled
+      });
+      if (result.error) throw new Error(result.error);
+      return;
+    }
+    const result = await updateFormOptionAction(formId, field.key, option.id, { enabled });
+    if (!result.success) throw new Error(result.error);
+  }
+
   async function setAllModels(enabled: boolean) {
     if (!field || !canManage) return;
     for (const option of options) {
-      await updateFormOptionAction(formId, field.key, option.id, { enabled });
+      await setOptionEnabled(option, enabled);
     }
     onRefresh();
   }
@@ -821,7 +918,7 @@ function ProductConfigCard({
         </ul>
       </div>
 
-      {open ? (
+      {open && showModelEditor ? (
         <div className="mt-4 grid gap-3 border-t border-[var(--border)] pt-4">
           <h3 className="font-black text-[var(--olive-dark)]">الموديلات</h3>
           <div className="grid gap-2">
@@ -847,11 +944,15 @@ function ProductConfigCard({
                     <label className="inline-flex items-center gap-2 text-xs font-bold">
                       <input
                         type="checkbox"
-                        defaultChecked={option.enabled !== false}
+                        defaultChecked={
+                          option.catalogProductId
+                            ? definition.outfitConfig?.catalogAssignments?.[option.catalogProductId]?.hidden !== true
+                            : option.enabled !== false
+                        }
                         disabled={pending}
                         onChange={(event) => {
                           startSafe(async () => {
-                            await updateFormOptionAction(formId, field!.key, option.id, { enabled: event.target.checked });
+                            await setOptionEnabled(option, event.target.checked);
                             onRefresh();
                           });
                         }}
@@ -895,8 +996,21 @@ function ProductConfigCard({
               {modelMessage ? <p className="text-sm font-bold text-[var(--olive)]">{modelMessage}</p> : null}
             </div>
           ) : null}
+          <p className="text-xs leading-6 text-[var(--muted)]">
+            نمط الاختيار (واحد/متعدد) والحد الأدنى/الأقصى تُضبط من تبويب التخصيصات على نفس منتج النموذج.
+          </p>
+          <LinkButton href={`/admin/forms/${formId}?tab=customizations`} variant="secondary" size="sm">
+            فتح التخصيصات
+          </LinkButton>
+        </div>
+      ) : null}
 
+      {open && expandCustomizations ? (
+        <div className="mt-4 grid gap-3 border-t border-[var(--border)] pt-4">
           <h3 className="font-black text-[var(--olive-dark)]">التخصيص المرتبط بهذا المنتج</h3>
+          <p className="text-xs leading-6 text-[var(--muted)]">
+            الموديلات وإظهارها تُدار من تبويب المنتجات. هنا إعدادات التخصيص لهذا المنتج المرتبط بالنموذج.
+          </p>
           <ul className="grid gap-2">
             {customizations.map((entry) => {
               const hasOptions = Boolean(entry.options?.length);
@@ -918,8 +1032,7 @@ function ProductConfigCard({
                           disabled={pending}
                           onChange={(event) => {
                             startSafe(async () => {
-                              await updateFormFieldMetaAction(formId, entry.key, { required: event.target.checked });
-                              onRefresh();
+                              await saveFieldMeta(entry.key, { required: event.target.checked });
                             });
                           }}
                         />
@@ -930,33 +1043,50 @@ function ProductConfigCard({
                     )}
                   </div>
                   {canManage && hasOptions ? (
-                    <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-2">
-                      <label className="inline-flex items-center gap-2 text-xs font-bold">
-                        <span>نمط الاختيار</span>
-                        <select
-                          className="min-h-9 rounded-xl border border-[var(--border)] bg-white px-2"
-                          defaultValue={mode}
-                          disabled={pending}
-                          onChange={(event) => {
-                            const nextMode = event.target.value as "single" | "multiple";
-                            startSafe(async () => {
-                              await updateFormFieldMetaAction(formId, entry.key, {
-                                selectionMode: nextMode,
-                                minSelections: nextMode === "multiple" ? entry.minSelections ?? (entry.required ? 1 : 0) : null,
-                                maxSelections: nextMode === "multiple" ? entry.maxSelections ?? null : null
+                    <div className="grid gap-2 border-t border-[var(--border)] pt-2">
+                      <p className="text-xs font-black text-[var(--olive-dark)]">نوع الاختيار</p>
+                      <div className="flex flex-wrap items-center gap-4" role="radiogroup" aria-label={`نوع الاختيار — ${entry.label}`}>
+                        <label className="inline-flex items-center gap-2 text-xs font-bold">
+                          <input
+                            type="radio"
+                            name={`selection-mode-${product}-${entry.key}`}
+                            checked={mode === "single"}
+                            disabled={pending}
+                            onChange={() => {
+                              startSafe(async () => {
+                                await saveFieldMeta(entry.key, {
+                                  selectionMode: "single",
+                                  minSelections: null,
+                                  maxSelections: null
+                                });
                               });
-                              onRefresh();
-                            });
-                          }}
-                        >
-                          <option value="single">اختيار واحد</option>
-                          <option value="multiple">اختيار متعدد</option>
-                        </select>
-                      </label>
+                            }}
+                          />
+                          اختيار واحد
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-xs font-bold">
+                          <input
+                            type="radio"
+                            name={`selection-mode-${product}-${entry.key}`}
+                            checked={mode === "multiple"}
+                            disabled={pending}
+                            onChange={() => {
+                              startSafe(async () => {
+                                await saveFieldMeta(entry.key, {
+                                  selectionMode: "multiple",
+                                  minSelections: entry.minSelections ?? (entry.required ? 1 : 0),
+                                  maxSelections: entry.maxSelections ?? null
+                                });
+                              });
+                            }}
+                          />
+                          اختيار متعدد
+                        </label>
+                      </div>
                       {mode === "multiple" ? (
-                        <>
+                        <div className="flex flex-wrap items-center gap-2">
                           <label className="inline-flex items-center gap-1 text-xs font-bold">
-                            أدنى
+                            الحد الأدنى للاختيارات
                             <input
                               type="number"
                               min={0}
@@ -966,17 +1096,16 @@ function ProductConfigCard({
                               onBlur={(event) => {
                                 const amount = Number(event.target.value);
                                 startSafe(async () => {
-                                  await updateFormFieldMetaAction(formId, entry.key, {
+                                  await saveFieldMeta(entry.key, {
                                     selectionMode: "multiple",
                                     minSelections: Number.isFinite(amount) ? Math.max(0, amount) : 0
                                   });
-                                  onRefresh();
                                 });
                               }}
                             />
                           </label>
                           <label className="inline-flex items-center gap-1 text-xs font-bold">
-                            أقصى
+                            الحد الأقصى للاختيارات
                             <input
                               type="number"
                               min={0}
@@ -987,16 +1116,15 @@ function ProductConfigCard({
                               onBlur={(event) => {
                                 const raw = event.target.value.trim();
                                 startSafe(async () => {
-                                  await updateFormFieldMetaAction(formId, entry.key, {
+                                  await saveFieldMeta(entry.key, {
                                     selectionMode: "multiple",
                                     maxSelections: raw === "" ? null : Math.max(0, Number(raw) || 0)
                                   });
-                                  onRefresh();
                                 });
                               }}
                             />
                           </label>
-                        </>
+                        </div>
                       ) : null}
                     </div>
                   ) : null}

@@ -174,7 +174,8 @@ export default async function FormManagePage({
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">منتجات هذا النموذج</h2>
             <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-              النموذج هو المصدر الوحيد للمنتجات الظاهرة للطلاب. الأزياء إعدادات تستخدم هذه المنتجات، ولا تُدار المنتجات من شاشة الدفعة.
+              اربط منتجات من الكتالوج العام بهذا النموذج (منتج مرتبط = نفس المنتج الأساسي، بلا نسخ). الأزياء تختار فقط من هذه
+              المنتجات المرتبطة، ولا تُنشئ قائمة منتجات ثانية.
             </p>
           </Card>
           <FormProductsPanel

@@ -132,7 +132,7 @@ export function ProductEditor({ categories, batches, forms, product }: Props) {
           action={async (formData) => {
             formData.set("product_id", product.id);
             const result = await uploadProductImageAction(formData);
-            setMessage(result.error ?? "تم رفع الصورة.");
+            setMessage(result.success ? "تم رفع الصورة." : result.error);
           }}
         >
           <FieldLabel>الصورة</FieldLabel>

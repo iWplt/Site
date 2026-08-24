@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { choiceSelectionError, fieldSelectionMode, isMultiSelectField, normalizeChoiceAnswer } from "./form-selection.ts";
+import { choiceSelectionError, fieldSelectionMode, isMultiSelectField, normalizeChoiceAnswer, toggleChoiceSelection } from "./form-selection.ts";
 import type { FormField } from "./types.ts";
 
 const multiField: FormField = {
@@ -53,4 +53,18 @@ test("required multi-select enforces minimum when configured", () => {
   const requiredMulti: FormField = { ...multiField, required: true, minSelections: 2 };
   assert.ok(choiceSelectionError(requiredMulti, ["a"]));
   assert.equal(choiceSelectionError(requiredMulti, ["a", "b"]), undefined);
+});
+
+test("toggleChoiceSelection adds and removes without replacing the array", () => {
+  let result = toggleChoiceSelection(multiField, undefined, "a");
+  assert.deepEqual(result.value, ["a"]);
+  result = toggleChoiceSelection(multiField, result.value, "b");
+  assert.deepEqual(result.value, ["a", "b"]);
+  result = toggleChoiceSelection(multiField, result.value, "c");
+  assert.deepEqual(result.value, ["a", "b", "c"]);
+  result = toggleChoiceSelection(multiField, result.value, "d");
+  assert.equal(result.blockedByMax, true);
+  assert.deepEqual(result.value, ["a", "b", "c"]);
+  result = toggleChoiceSelection(multiField, ["a", "b", "c"], "b");
+  assert.deepEqual(result.value, ["a", "c"]);
 });

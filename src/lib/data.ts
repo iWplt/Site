@@ -143,10 +143,12 @@ export async function getAdminForm(
     if (!form.batch_id) return null;
     if (!(await canAccessBatch(user, form.batch_id))) return null;
   }
-  return {
+  const record: BookingFormRecord = {
     ...form,
     definition: normalizeLiveFormDefinition(form.definition ?? defaultWarkaFormDefinition)
   };
+  if (options?.resolveImages) return withCatalogDefinition(record);
+  return record;
 }
 
 export async function listForms(user: AppUser): Promise<BookingFormRecord[]> {

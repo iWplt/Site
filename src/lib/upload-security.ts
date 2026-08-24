@@ -2,18 +2,13 @@ import "server-only";
 
 import type { VerifiedBookingSession } from "@/lib/types";
 
+export { sanitizeStorageSegment, stableStorageSegment } from "@/lib/storage-path";
+
 const IMAGE_AND_PDF = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const IMAGES_ONLY = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export const STUDENT_UPLOAD_MIMES = IMAGE_AND_PDF;
 export const OPTION_IMAGE_MIMES = IMAGES_ONLY;
-
-export function sanitizeStorageSegment(value: string) {
-  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(value)) {
-    throw new Error("مسار الملف غير صالح.");
-  }
-  return value;
-}
 
 export function sniffAllowedMime(buffer: Buffer, allowed: Set<string>): string | null {
   let mime: string | null = null;
