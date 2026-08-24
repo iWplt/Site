@@ -158,6 +158,12 @@ export type FormField = {
   options?: FormOption[];
   /** When true, choice fields render Owner option reference images (or placeholders). */
   showOptionImages?: boolean;
+  /** single = one option; multiple = multi-select. Defaults from field type when omitted. */
+  selectionMode?: "single" | "multiple";
+  /** Minimum selected options when selectionMode is multiple (default 0, or 1 if required). */
+  minSelections?: number;
+  /** Maximum selected options when selectionMode is multiple (omit = unlimited). */
+  maxSelections?: number;
   defaultValue?: unknown;
   locked?: boolean;
   accept?: string[];

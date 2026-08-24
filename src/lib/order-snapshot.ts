@@ -1,4 +1,6 @@
 import { findSelectedOption, flattenFields, optionLabel } from "@/lib/form-definition";
+import { isMultiSelectField } from "@/lib/form-selection";
+import { asStringList } from "@/lib/outfit-architecture";
 import type { FormDefinition, FormField, FormOption } from "@/lib/types";
 
 export const ORDER_SNAPSHOT_KEY = "_orderSnapshot";
@@ -18,6 +20,7 @@ export type SnapshotField = {
   value: unknown;
   displayValue: string;
   optionId?: string;
+  optionIds?: string[];
   optionLabel?: string;
   optionDescription?: string;
   referenceImage?: SnapshotImageRef;
@@ -55,6 +58,12 @@ function displayForField(field: FormField, value: unknown) {
   return optionLabel(field.options, value);
 }
 
+function selectedOptions(field: FormField, value: unknown): FormOption[] {
+  return asStringList(value)
+    .map((entry) => findSelectedOption(field.options, entry))
+    .filter((option): option is FormOption => Boolean(option));
+}
+
 export function buildOrderSnapshot(input: {
   formId: string;
   formName: string;
@@ -65,7 +74,9 @@ export function buildOrderSnapshot(input: {
   for (const section of input.definition.sections) {
     for (const field of section.fields) {
       const value = input.answers[field.key];
-      const selected = findSelectedOption(field.options, value);
+      const selected = selectedOptions(field, value);
+      const primary = selected[0];
+      const multi = isMultiSelectField(field) || selected.length > 1;
       fields.push({
         sectionId: section.id,
         sectionTitle: section.title,
@@ -74,16 +85,18 @@ export function buildOrderSnapshot(input: {
         type: field.type,
         value,
         displayValue: displayForField(field, value),
-        optionId: selected?.id,
-        optionLabel: selected?.label,
-        optionDescription: selected?.description,
-        referenceImage: referenceFromOption(selected),
+        optionId: primary?.id,
+        optionIds: multi ? selected.map((option) => option.id) : primary ? [primary.id] : undefined,
+        optionLabel: multi ? selected.map((option) => option.label).join("، ") : primary?.label,
+        optionDescription: primary?.description,
+        referenceImage: referenceFromOption(primary),
+        childImages: selected.length > 1 ? selected.map((option) => referenceFromOption(option)).filter((entry): entry is SnapshotImageRef => Boolean(entry)) : undefined,
         fixed: Boolean(field.locked),
-        productId: selected?.catalogProductId,
-        productName: selected?.catalogProductId ? selected.label : undefined,
-        categorySlug: selected?.categorySlug,
-        categoryName: selected?.categoryName,
-        priceIqd: selected?.priceIqd ?? null
+        productId: primary?.catalogProductId,
+        productName: primary?.catalogProductId ? primary.label : undefined,
+        categorySlug: primary?.categorySlug,
+        categoryName: primary?.categoryName,
+        priceIqd: primary?.priceIqd ?? null
       });
     }
   }
@@ -117,6 +130,10 @@ export function collectReferencePaths(snapshot: OrderSnapshot | null) {
   for (const field of snapshot.fields) {
     const path = field.referenceImage?.path;
     if (path && !path.startsWith("/") && !/^https?:\/\//.test(path)) paths.add(path);
+    for (const image of field.childImages ?? []) {
+      const childPath = image.path;
+      if (childPath && !childPath.startsWith("/") && !/^https?:\/\//.test(childPath)) paths.add(childPath);
+    }
   }
   return [...paths];
 }

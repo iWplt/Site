@@ -307,12 +307,18 @@ function pruneInvalidChoiceAnswers(definition: FormDefinition, answers: Record<s
   const next = { ...answers };
   for (const section of definition.sections) {
     for (const field of section.fields) {
-      if (!["radio", "select", "image_choice"].includes(field.type)) continue;
+      if (!["radio", "select", "image_choice", "checkbox"].includes(field.type)) continue;
       if (!fieldVisibleForBookingContext(field, definition, next)) continue;
       const value = next[field.key];
       if (isBlankValue(value)) continue;
       const allowed = optionValuesForBookingContext(field, definition, next);
-      if (!allowed.has(String(value))) delete next[field.key];
+      const selected = asStringList(value).filter((entry) => allowed.has(entry));
+      if (!selected.length) {
+        delete next[field.key];
+        continue;
+      }
+      const multi = field.selectionMode === "multiple" || field.type === "checkbox";
+      next[field.key] = multi ? selected : selected[0];
     }
   }
   return next;

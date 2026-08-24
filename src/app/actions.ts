@@ -78,7 +78,7 @@ import {
   clientRateBucket,
   guardAccessCodeAttempt
 } from "@/lib/access-code-rate-limit";
-import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, CoreProductId, FormDefinition, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
+import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, CoreProductId, FormDefinition, FormField, FormOption, FormStatus, OrderStatus, OutfitConfig } from "@/lib/types";
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
@@ -487,13 +487,6 @@ export async function updateStudentAction(_state: { error?: string; success?: bo
   } catch (error) {
     return { error: error instanceof Error ? error.message : "تعذر تحديث الطالب." };
   }
-}
-
-export async function saveBatchUniformAction() {
-  await requireUser(["OWNER"]);
-  return {
-    error: "تثبيت خيارات الزي على مستوى الدفعة لم يعد متاحاً. أدر المنتجات من تبويب المنتجات والأزياء من تبويب الأزياء في النموذج."
-  };
 }
 
 export async function createBatchAction(_state: { error?: string; success?: boolean; batchId?: string } | undefined, formData: FormData) {
@@ -1053,7 +1046,15 @@ export async function updateFormOptionAction(
 export async function updateFormFieldMetaAction(
   formId: string,
   fieldKey: string,
-  patch: { showOptionImages?: boolean; uploadMode?: "single" | "multiple"; maxFiles?: number; required?: boolean }
+  patch: {
+    showOptionImages?: boolean;
+    uploadMode?: "single" | "multiple";
+    maxFiles?: number;
+    required?: boolean;
+    selectionMode?: "single" | "multiple";
+    minSelections?: number | null;
+    maxSelections?: number | null;
+  }
 ) {
   await requireUser(["OWNER"]);
   if (assertPersistenceAllowed() === "supabase") {
@@ -1303,10 +1304,43 @@ export async function reorderFormOptionsAction(formId: string, fieldKey: string,
   revalidateAdmin();
 }
 
+function applyLocalFieldMetaPatch(
+  field: FormField,
+  patch: {
+    showOptionImages?: boolean;
+    uploadMode?: "single" | "multiple";
+    maxFiles?: number;
+    required?: boolean;
+    selectionMode?: "single" | "multiple";
+    minSelections?: number | null;
+    maxSelections?: number | null;
+  }
+): FormField {
+  const updated = { ...field };
+  if (patch.showOptionImages !== undefined) updated.showOptionImages = patch.showOptionImages;
+  if (patch.uploadMode !== undefined) updated.uploadMode = patch.uploadMode;
+  if (patch.maxFiles !== undefined) updated.maxFiles = patch.maxFiles;
+  if (patch.required !== undefined) updated.required = patch.required;
+  if (patch.selectionMode !== undefined) updated.selectionMode = patch.selectionMode;
+  if (patch.minSelections === null) delete updated.minSelections;
+  else if (patch.minSelections !== undefined) updated.minSelections = patch.minSelections;
+  if (patch.maxSelections === null) delete updated.maxSelections;
+  else if (patch.maxSelections !== undefined) updated.maxSelections = patch.maxSelections;
+  return updated;
+}
+
 function patchLocalFieldMeta(
   definition: FormDefinition,
   fieldKey: string,
-  patch: { showOptionImages?: boolean; uploadMode?: "single" | "multiple"; maxFiles?: number; required?: boolean }
+  patch: {
+    showOptionImages?: boolean;
+    uploadMode?: "single" | "multiple";
+    maxFiles?: number;
+    required?: boolean;
+    selectionMode?: "single" | "multiple";
+    minSelections?: number | null;
+    maxSelections?: number | null;
+  }
 ): FormDefinition {
   let found = false;
   const next: FormDefinition = {
@@ -1316,7 +1350,7 @@ function patchLocalFieldMeta(
       fields: section.fields.map((field) => {
         if (field.key !== fieldKey) return field;
         found = true;
-        return { ...field, ...patch };
+        return applyLocalFieldMetaPatch(field, patch);
       })
     }))
   };
@@ -1325,7 +1359,7 @@ function patchLocalFieldMeta(
   const liveSection = live.sections.find((section) => section.fields.some((field) => field.key === fieldKey));
   const liveField = liveSection?.fields.find((field) => field.key === fieldKey);
   if (!liveField || !liveSection) throw new Error("الحقل غير موجود.");
-  const patched = { ...liveField, ...patch };
+  const patched = applyLocalFieldMetaPatch(liveField, patch);
   if (next.sections.some((section) => section.id === liveSection.id)) {
     return {
       ...next,

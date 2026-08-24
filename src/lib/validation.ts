@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
+import { choiceSelectionError, isMultiSelectField, normalizeChoiceAnswer } from "@/lib/form-selection";
 import {
   asStringList,
   fieldVisibleForBookingContext,
   isBlankValue,
-  optionsForBookingContext,
+  optionValuesForBookingContext,
   resolveOutfitAnswers
 } from "@/lib/outfit-architecture";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -62,10 +63,18 @@ export function validateDynamicAnswers(
       continue;
     }
 
-    if (field.type === "checkbox") {
-      const selected = asStringList(value);
-      if (field.required && !selected.length) {
-        errors[field.key] = "يرجى اختيار عنصر واحد على الأقل.";
+    if (["radio", "select", "image_choice", "checkbox"].includes(field.type) && field.options?.length) {
+      const normalized = normalizeChoiceAnswer(field, value);
+      const selected = asStringList(normalized ?? []);
+      const countError = choiceSelectionError(field, normalized);
+      if (countError) {
+        errors[field.key] = countError;
+        continue;
+      }
+      if (selected.length) {
+        const allowed = optionValuesForBookingContext(field, definition, resolved);
+        const invalid = selected.some((entry) => !allowed.has(entry));
+        if (invalid) errors[field.key] = "الخيار المحدد غير متاح.";
       }
       continue;
     }
@@ -86,14 +95,6 @@ export function validateDynamicAnswers(
       const result = phoneSchema.safeParse(String(value));
       if (!result.success) errors[field.key] = result.error.issues[0]?.message ?? "رقم الهاتف غير صحيح.";
     }
-
-    if (["radio", "select", "image_choice"].includes(field.type) && value && field.options?.length) {
-      const allowed = optionsForBookingContext(field, definition, resolved);
-      const allowedValues = new Set(
-        allowed.flatMap((option) => [option.value, ...(option.children?.filter((child) => child.enabled !== false).map((child) => child.value) ?? [])])
-      );
-      if (!allowedValues.has(String(value))) errors[field.key] = "الخيار المحدد غير متاح.";
-    }
   }
 
   return {
@@ -101,3 +102,5 @@ export function validateDynamicAnswers(
     errors
   };
 }
+
+export { isMultiSelectField };

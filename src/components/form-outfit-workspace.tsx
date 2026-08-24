@@ -517,9 +517,14 @@ function OutfitEditor({
   }
 
   function optionFieldKeys(productId: CoreProductId) {
-    const keys = [PRODUCT_MODEL_KEYS[productId]];
-    if (productId === "robe") keys.push("robe_addition");
-    return keys.filter((key) => fieldsByKey.has(key));
+    const section = definition.sections.find((entry) => entry.id === productId);
+    const keys = new Set<string>([PRODUCT_MODEL_KEYS[productId]]);
+    for (const field of section?.fields ?? []) {
+      if (["radio", "select", "image_choice", "checkbox"].includes(field.type) && field.options?.length) {
+        keys.add(field.key);
+      }
+    }
+    return [...keys].filter((key) => fieldsByKey.has(key));
   }
   return (
     <div className={cn("rounded-[1.2rem] border border-[var(--border)] bg-white/60 p-4", outfit.enabled === false && "opacity-60")}>
@@ -893,32 +898,111 @@ function ProductConfigCard({
 
           <h3 className="font-black text-[var(--olive-dark)]">التخصيص المرتبط بهذا المنتج</h3>
           <ul className="grid gap-2">
-            {customizations.map((entry) => (
-              <li key={entry.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/60 px-4 py-3">
-                <div>
-                  <p className="text-xs font-bold text-[var(--gold)]">{entry.key}</p>
-                  <p className="font-bold text-[var(--olive-dark)]">{entry.label}</p>
-                </div>
-                {canManage ? (
-                  <label className="inline-flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      defaultChecked={Boolean(entry.required)}
-                      disabled={pending}
-                      onChange={(event) => {
-                        startSafe(async () => {
-                          await updateFormFieldMetaAction(formId, entry.key, { required: event.target.checked });
-                          onRefresh();
-                        });
-                      }}
-                    />
-                    مطلوب
-                  </label>
-                ) : (
-                  <span className="text-xs font-bold text-[var(--muted)]">{entry.required ? "مطلوب" : "اختياري"}</span>
-                )}
-              </li>
-            ))}
+            {customizations.map((entry) => {
+              const hasOptions = Boolean(entry.options?.length);
+              const mode = entry.selectionMode ?? (entry.type === "checkbox" ? "multiple" : "single");
+              return (
+                <li key={entry.key} className="grid gap-2 rounded-2xl bg-white/60 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-[var(--olive-dark)]">{entry.label}</p>
+                      <p className="text-xs font-bold text-[var(--muted)]">
+                        {hasOptions ? (mode === "multiple" ? "اختيار متعدد" : "اختيار واحد") : entry.type}
+                      </p>
+                    </div>
+                    {canManage ? (
+                      <label className="inline-flex items-center gap-2 text-sm font-bold">
+                        <input
+                          type="checkbox"
+                          defaultChecked={Boolean(entry.required)}
+                          disabled={pending}
+                          onChange={(event) => {
+                            startSafe(async () => {
+                              await updateFormFieldMetaAction(formId, entry.key, { required: event.target.checked });
+                              onRefresh();
+                            });
+                          }}
+                        />
+                        مطلوب
+                      </label>
+                    ) : (
+                      <span className="text-xs font-bold text-[var(--muted)]">{entry.required ? "مطلوب" : "اختياري"}</span>
+                    )}
+                  </div>
+                  {canManage && hasOptions ? (
+                    <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-2">
+                      <label className="inline-flex items-center gap-2 text-xs font-bold">
+                        <span>نمط الاختيار</span>
+                        <select
+                          className="min-h-9 rounded-xl border border-[var(--border)] bg-white px-2"
+                          defaultValue={mode}
+                          disabled={pending}
+                          onChange={(event) => {
+                            const nextMode = event.target.value as "single" | "multiple";
+                            startSafe(async () => {
+                              await updateFormFieldMetaAction(formId, entry.key, {
+                                selectionMode: nextMode,
+                                minSelections: nextMode === "multiple" ? entry.minSelections ?? (entry.required ? 1 : 0) : null,
+                                maxSelections: nextMode === "multiple" ? entry.maxSelections ?? null : null
+                              });
+                              onRefresh();
+                            });
+                          }}
+                        >
+                          <option value="single">اختيار واحد</option>
+                          <option value="multiple">اختيار متعدد</option>
+                        </select>
+                      </label>
+                      {mode === "multiple" ? (
+                        <>
+                          <label className="inline-flex items-center gap-1 text-xs font-bold">
+                            أدنى
+                            <input
+                              type="number"
+                              min={0}
+                              className="h-9 w-16 rounded-xl border border-[var(--border)] bg-white px-2"
+                              defaultValue={entry.minSelections ?? (entry.required ? 1 : 0)}
+                              disabled={pending}
+                              onBlur={(event) => {
+                                const amount = Number(event.target.value);
+                                startSafe(async () => {
+                                  await updateFormFieldMetaAction(formId, entry.key, {
+                                    selectionMode: "multiple",
+                                    minSelections: Number.isFinite(amount) ? Math.max(0, amount) : 0
+                                  });
+                                  onRefresh();
+                                });
+                              }}
+                            />
+                          </label>
+                          <label className="inline-flex items-center gap-1 text-xs font-bold">
+                            أقصى
+                            <input
+                              type="number"
+                              min={0}
+                              className="h-9 w-16 rounded-xl border border-[var(--border)] bg-white px-2"
+                              defaultValue={entry.maxSelections ?? ""}
+                              placeholder="∞"
+                              disabled={pending}
+                              onBlur={(event) => {
+                                const raw = event.target.value.trim();
+                                startSafe(async () => {
+                                  await updateFormFieldMetaAction(formId, entry.key, {
+                                    selectionMode: "multiple",
+                                    maxSelections: raw === "" ? null : Math.max(0, Number(raw) || 0)
+                                  });
+                                  onRefresh();
+                                });
+                              }}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

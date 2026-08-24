@@ -21,6 +21,7 @@ import {
   resolveOutfitAnswers,
   resolveSelectedOutfit
 } from "@/lib/outfit-architecture";
+import { choiceSelectionError, isMultiSelectField, selectionBounds } from "@/lib/form-selection";
 import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -120,16 +121,15 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
         if (uploadError) nextErrors[field.key] = uploadError;
         continue;
       }
-      if (field.type === "checkbox") {
-        if (field.required && !asStringList(value).length) {
-          nextErrors[field.key] = "يرجى اختيار عنصر واحد على الأقل.";
-        }
+      if (field.type === "checkbox" || (["radio", "select", "image_choice"].includes(field.type) && isMultiSelectField(field))) {
+        const countError = choiceSelectionError(field, value);
+        if (countError) nextErrors[field.key] = countError;
         continue;
       }
       if (field.required && isBlankValue(value)) {
         nextErrors[field.key] = "هذا الحقل مطلوب.";
       }
-      if (["radio", "select", "image_choice"].includes(field.type) && !isBlankValue(value)) {
+      if (["radio", "select", "image_choice"].includes(field.type) && !isBlankValue(value) && !isMultiSelectField(field)) {
         const allowed = optionsForBookingContext(field, form.definition, answers);
         const values = new Set(
           allowed.flatMap((option) => [option.value, ...(option.children?.map((child) => child.value) ?? [])])
@@ -356,11 +356,21 @@ function FieldRenderer({
   onFiles: (files: UploadedFile[]) => void;
 }) {
   const choiceOptions = contextOptions ?? field.options;
-  const lockedOption = choiceOptions?.find((option) => option.value === value) ?? choiceOptions?.[0];
+  const multiSelect = isMultiSelectField(field);
+  const bounds = selectionBounds(field);
+  const lockedOption =
+    choiceOptions?.find((option) => asStringList(value).includes(option.value) || option.value === value) ?? choiceOptions?.[0];
   return (
     <div>
       <FieldLabel required={field.required}>{field.label}</FieldLabel>
       {field.description ? <p className="mb-3 text-sm leading-7 text-[var(--muted)]">{field.description}</p> : null}
+      {multiSelect ? (
+        <p className="mb-3 text-xs font-bold text-[var(--muted)]">
+          اختيار متعدد
+          {bounds.max !== undefined ? ` · الحد الأقصى ${bounds.max}` : ""}
+          {bounds.min > 0 ? ` · الحد الأدنى ${bounds.min}` : ""}
+        </p>
+      ) : null}
       {field.locked && isUniformProductKey(field.key) ? (
         <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#3f472d12] px-3 py-1 text-xs font-bold text-[var(--olive)]">
           <LockKeyhole size={13} /> اختيار موحد للدفعة
@@ -398,45 +408,46 @@ function FieldRenderer({
       ) : null}
       {field.type === "checkbox" && choiceOptions ? (
         <div className="grid gap-3">
-          {choiceOptions
-            .map((option) => {
-              const selected = asStringList(value).includes(option.value);
-              const locked = Boolean(field.locked || productSelectionLocked);
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={locked}
-                  aria-pressed={selected}
-                  onClick={() => {
-                    if (locked) return;
-                    const current = asStringList(value);
-                    onChange(selected ? current.filter((entry) => entry !== option.value) : [...current, option.value]);
-                  }}
+          {choiceOptions.map((option) => {
+            const selected = asStringList(value).includes(option.value);
+            const locked = Boolean(field.locked || productSelectionLocked);
+            return (
+              <button
+                key={option.id}
+                type="button"
+                disabled={locked}
+                aria-pressed={selected}
+                onClick={() => {
+                  if (locked) return;
+                  const current = asStringList(value);
+                  const next = selected ? current.filter((entry) => entry !== option.value) : [...current, option.value];
+                  if (!selected && bounds.max !== undefined && next.length > bounds.max) return;
+                  onChange(next);
+                }}
+                className={cn(
+                  "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
+                  selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70",
+                  locked && "opacity-90"
+                )}
+              >
+                <span>
+                  <span className="block text-base font-black text-[var(--olive-dark)]">{option.label}</span>
+                  {option.description ? <span className="mt-1 block text-sm text-[var(--muted)]">{option.description}</span> : null}
+                  {locked && field.key === "selected_products" ? (
+                    <span className="mt-2 block text-xs font-bold text-[var(--olive)]">قطعة ثابتة في الزي الكامل</span>
+                  ) : null}
+                </span>
+                <span
                   className={cn(
-                    "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
-                    selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70",
-                    locked && "opacity-90"
+                    "mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2",
+                    selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
                   )}
                 >
-                  <span>
-                    <span className="block text-base font-black text-[var(--olive-dark)]">{option.label}</span>
-                    {option.description ? <span className="mt-1 block text-sm text-[var(--muted)]">{option.description}</span> : null}
-                    {locked && field.key === "selected_products" ? (
-                      <span className="mt-2 block text-xs font-bold text-[var(--olive)]">قطعة ثابتة في الزي الكامل</span>
-                    ) : null}
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2",
-                      selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
-                    )}
-                  >
-                    {selected ? <Check size={12} /> : null}
-                  </span>
-                </button>
-              );
-            })}
+                  {selected ? <Check size={12} /> : null}
+                </span>
+              </button>
+            );
+          })}
         </div>
       ) : null}
       {field.type === "boolean" ? (
@@ -494,7 +505,7 @@ function FieldRenderer({
               const optionChildren = (option.children?.length ? option.children : [option]).filter((child) => child.enabled !== false);
               return optionChildren.map((child, childIndex) => {
                 const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
-                const selected = value === child.value;
+                const selected = multiSelect ? asStringList(value).includes(child.value) : value === child.value;
                 const showImages = Boolean(field.showOptionImages || field.type === "image_choice");
                 const image = child.imageUrl || option.imageUrl;
                 return (
@@ -503,7 +514,17 @@ function FieldRenderer({
                     type="button"
                     disabled={field.locked}
                     aria-pressed={selected}
-                    onClick={() => onChange(child.value)}
+                    onClick={() => {
+                      if (field.locked) return;
+                      if (!multiSelect) {
+                        onChange(child.value);
+                        return;
+                      }
+                      const current = asStringList(value);
+                      const next = selected ? current.filter((entry) => entry !== child.value) : [...current, child.value];
+                      if (!selected && bounds.max !== undefined && next.length > bounds.max) return;
+                      onChange(next);
+                    }}
                     className={cn(
                       "overflow-hidden rounded-[1.4rem] border bg-[var(--paper)] text-right shadow-[0_10px_30px_rgba(37,43,28,0.05)] transition",
                       selected ? "border-[var(--olive)] ring-4 ring-[#3f472d18]" : "border-[var(--border)]",
@@ -529,7 +550,8 @@ function FieldRenderer({
                         <span className="text-base font-black leading-7 text-[var(--olive-dark)]">{label}</span>
                         <span
                           className={cn(
-                            "mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-full border-2",
+                            "mt-1 grid h-6 w-6 shrink-0 place-items-center border-2",
+                            multiSelect ? "rounded-md" : "rounded-full",
                             selected ? "border-[var(--olive)] bg-[var(--olive)] text-white" : "border-[var(--border)]"
                           )}
                         >

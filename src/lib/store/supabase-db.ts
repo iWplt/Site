@@ -42,6 +42,7 @@ import type {
   CatalogFormAssignment,
   CoreProductId,
   FormDefinition,
+  FormField,
   FormOption,
   FormStatus,
   FormType,
@@ -2149,6 +2150,9 @@ export type FormFieldMetaPatch = Partial<{
   uploadMode: "single" | "multiple";
   maxFiles: number;
   required: boolean;
+  selectionMode: "single" | "multiple";
+  minSelections: number | null;
+  maxSelections: number | null;
 }>;
 
 export async function sbUpdateFormFieldMeta(formId: string, fieldKey: string, patch: FormFieldMetaPatch) {
@@ -2265,7 +2269,7 @@ function patchFieldInDefinition(definition: FormDefinition, fieldKey: string, pa
       fields: section.fields.map((field) => {
         if (field.key !== fieldKey) return field;
         found = true;
-        return { ...field, ...patch };
+        return applyFieldMetaPatch(field, patch);
       })
     }))
   };
@@ -2275,7 +2279,7 @@ function patchFieldInDefinition(definition: FormDefinition, fieldKey: string, pa
   const liveSection = live.sections.find((section) => section.fields.some((field) => field.key === fieldKey));
   const liveField = liveSection?.fields.find((field) => field.key === fieldKey);
   if (!liveField || !liveSection) throw new Error("الحقل غير موجود.");
-  const patched = { ...liveField, ...patch };
+  const patched = applyFieldMetaPatch(liveField, patch);
   if (next.sections.some((section) => section.id === liveSection.id)) {
     return {
       ...next,
@@ -2285,6 +2289,20 @@ function patchFieldInDefinition(definition: FormDefinition, fieldKey: string, pa
     };
   }
   return { ...next, sections: [...next.sections, { ...liveSection, fields: [patched] }] };
+}
+
+function applyFieldMetaPatch(field: FormField, patch: FormFieldMetaPatch): FormField {
+  const next: FormField = { ...field };
+  if (patch.showOptionImages !== undefined) next.showOptionImages = patch.showOptionImages;
+  if (patch.uploadMode !== undefined) next.uploadMode = patch.uploadMode;
+  if (patch.maxFiles !== undefined) next.maxFiles = patch.maxFiles;
+  if (patch.required !== undefined) next.required = patch.required;
+  if (patch.selectionMode !== undefined) next.selectionMode = patch.selectionMode;
+  if (patch.minSelections === null) delete next.minSelections;
+  else if (patch.minSelections !== undefined) next.minSelections = patch.minSelections;
+  if (patch.maxSelections === null) delete next.maxSelections;
+  else if (patch.maxSelections !== undefined) next.maxSelections = patch.maxSelections;
+  return next;
 }
 
 function reorderOptionsInDefinition(definition: FormDefinition, fieldKey: string, orderedIds: string[]): FormDefinition {

@@ -316,9 +316,18 @@ export function fieldIsVisible(field: FormField, answers: Record<string, unknown
   if (!field.conditional?.length) return true;
   return field.conditional.every((rule) => {
     const current = answers[rule.fieldKey];
-    if (rule.operator === "truthy") return Boolean(current);
-    if (rule.operator === "equals") return current === rule.value;
-    if (rule.operator === "not_equals") return current !== rule.value;
+    if (rule.operator === "truthy") {
+      if (Array.isArray(current)) return current.length > 0;
+      return Boolean(current);
+    }
+    if (rule.operator === "equals") {
+      if (Array.isArray(current)) return current.map(String).includes(String(rule.value ?? ""));
+      return current === rule.value;
+    }
+    if (rule.operator === "not_equals") {
+      if (Array.isArray(current)) return !current.map(String).includes(String(rule.value ?? ""));
+      return current !== rule.value;
+    }
     if (rule.operator === "includes") {
       if (Array.isArray(current)) return current.map(String).includes(String(rule.value ?? ""));
       return String(current ?? "").includes(String(rule.value ?? ""));
