@@ -199,6 +199,11 @@ export function productIsSelected(answers: Record<string, unknown>, product: Cor
   return asStringList(answers.selected_products).includes(product);
 }
 
+export function isSingleItemBooking(definition: FormDefinition, answers: Record<string, unknown>) {
+  const config = sanitizeOutfitConfig(definition.outfitConfig);
+  return String(answers.booking_type) === "single_pieces" && config.singleItemEnabled;
+}
+
 /**
  * Runtime upgrade for stored JSON definitions:
  * merge child product sections, inject global robe measurements and
@@ -251,7 +256,7 @@ function ensureBookingFields(sections: FormSection[], config: OutfitConfig) {
     label: "القطع المطلوبة",
     type: "checkbox",
     required: true,
-    description: "اختر قطعة أو أكثر. كل قطعة تحتفظ بخياراتها الكاملة.",
+    description: "للحجز المفرد فقط. اختر من المنتجات التي سمحت بها الإدارة. الزي الكامل لا يتيح إضافة أو حذف قطع.",
     options: config.singleItemProducts.map((id) => ({
       id: `product-${id}`,
       label: CORE_PRODUCT_LABELS[id],
@@ -268,7 +273,7 @@ function ensureBookingFields(sections: FormSection[], config: OutfitConfig) {
     type: outfits.length > 1 || hasOutfitImages ? (hasOutfitImages ? "image_choice" : "radio") : "read_only",
     required: outfits.length > 1,
     defaultValue: outfits[0]?.id,
-    description: "كل زي كامل يشمل الروب والوشاح والقبعة مع تخصيص كل منتج.",
+    description: "المنتجات مشمولة تلقائياً حسب إعداد هذا الزي. خصّص كل قطعة في الخطوات التالية دون إضافة أو حذف أو استبدال منتجات.",
     showOptionImages: hasOutfitImages,
     options: outfits.map((outfit) => ({
       id: outfit.id,

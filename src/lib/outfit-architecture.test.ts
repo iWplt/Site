@@ -3,6 +3,7 @@ import test from "node:test";
 import { defaultWarkaFormDefinition, fieldIsVisible } from "./form-definition.ts";
 import {
   applyOutfitArchitecture,
+  isSingleItemBooking,
   outfitProductDisplayImage,
   productIsSelected,
   resolveOutfitAnswers,
@@ -199,6 +200,76 @@ test("sanitize restores missing full-outfit cores without dropping stored outfit
   assert.equal(config.fullOutfits[0]?.imagePath, "form/outfits/broken/cover/reference.webp");
   assert.deepEqual(config.productOrder, ["cap", "robe", "sash"]);
   assert.deepEqual(config.singleItemProducts, ["sash"]);
+});
+
+test("single item booking is distinct from full outfit assignment", () => {
+  const live = applyOutfitArchitecture(defaultWarkaFormDefinition);
+  assert.equal(isSingleItemBooking(live, { booking_type: "full_set" }), false);
+  assert.equal(isSingleItemBooking(live, { booking_type: "single_pieces" }), true);
+  const forced = applyOutfitArchitecture({
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      ...defaultWarkaFormDefinition.outfitConfig!,
+      singleItemEnabled: false
+    }
+  });
+  assert.equal(isSingleItemBooking(forced, { booking_type: "single_pieces" }), false);
+});
+
+test("full outfit ignores student product changes and keeps enabled customizations visible", () => {
+  const live = applyOutfitArchitecture(defaultWarkaFormDefinition);
+  const answers = resolveOutfitAnswers(live, {
+    booking_type: "full_set",
+    full_outfit_id: "mix",
+    selected_products: ["robe"]
+  });
+  const selectedProducts = live.sections.flatMap((section) => section.fields).find((field) => field.key === "selected_products");
+  assert.deepEqual(answers.selected_products, ["robe", "sash", "cap"]);
+  assert.equal(fieldIsVisible(selectedProducts!, answers), false);
+
+  const visibleCustomizationKeys = [
+    "robe_model",
+    "robe_addition",
+    "robe_height",
+    "robe_clothing_size",
+    "robe_color",
+    "robe_color_images",
+    "robe_notes",
+    "sash_type",
+    "sash_edge_embroidery",
+    "name_embroidery",
+    "year_side_embroidery",
+    "year_side_image",
+    "sash_color",
+    "sash_color_images",
+    "sash_notes",
+    "cap_type",
+    "cap_elastic",
+    "cap_side_image",
+    "cap_top_image",
+    "cap_color",
+    "cap_color_images",
+    "cap_notes"
+  ];
+  for (const key of visibleCustomizationKeys) {
+    const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === key);
+    assert.ok(field, key);
+    assert.equal(fieldIsVisible(field!, answers), true, key);
+  }
+});
+
+test("single item keeps product picking and only shows that product's customizations", () => {
+  const live = applyOutfitArchitecture(defaultWarkaFormDefinition);
+  const selectedProducts = live.sections.flatMap((section) => section.fields).find((field) => field.key === "selected_products");
+  const sashOnly = resolveOutfitAnswers(live, { booking_type: "single_pieces", selected_products: ["sash"] });
+  assert.equal(fieldIsVisible(selectedProducts!, sashOnly), true);
+  assert.deepEqual(sashOnly.selected_products, ["sash"]);
+  const sashType = live.sections.flatMap((section) => section.fields).find((field) => field.key === "sash_type");
+  const robeModel = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_model");
+  const capType = live.sections.flatMap((section) => section.fields).find((field) => field.key === "cap_type");
+  assert.equal(fieldIsVisible(sashType!, sashOnly), true);
+  assert.equal(fieldIsVisible(robeModel!, sashOnly), false);
+  assert.equal(fieldIsVisible(capType!, sashOnly), false);
 });
 
 test("outfit product images appear only for the selected full outfit", () => {

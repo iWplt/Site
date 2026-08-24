@@ -10,7 +10,7 @@ import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { fieldIsVisible } from "@/lib/form-definition";
 import { isUniformProductKey } from "@/lib/form-uniform";
-import { asStringList, isBlankValue, outfitProductDisplayImage, resolveOutfitAnswers, resolveSelectedOutfit } from "@/lib/outfit-architecture";
+import { asStringList, CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, isBlankValue, isSingleItemBooking, outfitProductDisplayImage, resolveOutfitAnswers, resolveSelectedOutfit } from "@/lib/outfit-architecture";
 import { formatProductPrice, optionVisibleForBooking } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
@@ -56,6 +56,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   const [success, setSuccess] = useState<SuccessState | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  const singleItem = isSingleItemBooking(form.definition, answers);
   const sections = useMemo(() => {
     return form.definition.sections.filter((section) =>
       section.fields.some((field) => fieldIsVisible(field, answers))
@@ -77,15 +78,21 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   const visibleFields = useMemo(
     () =>
       (sections[activeStep]?.fields.filter((field) => fieldIsVisible(field, answers)) ?? []).filter((field) => {
+        if (field.key === "selected_products" && !singleItem) return false;
         if (!["radio", "select", "image_choice", "checkbox"].includes(field.type) || !field.options?.length) return true;
         const visibleOptions = field.options.filter((option) => optionVisibleForBooking(option, answers.booking_type));
         return visibleOptions.length > 0 || Boolean(field.required);
       }),
-    [answers, sections, activeStep]
+    [answers, sections, activeStep, singleItem]
   );
 
   function setAnswer(key: string, value: unknown) {
-    setAnswers((current) => resolveOutfitAnswers(form.definition, { ...current, [key]: value }));
+    setAnswers((current) => {
+      if (key === "selected_products" && !isSingleItemBooking(form.definition, current)) {
+        return resolveOutfitAnswers(form.definition, current);
+      }
+      return resolveOutfitAnswers(form.definition, { ...current, [key]: value });
+    });
     setErrors((current) => {
       const next = { ...current };
       delete next[key];
@@ -200,6 +207,14 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
           <p className="text-xs font-bold text-[var(--gold)]">{String(activeStep + 1).padStart(2, "0")}</p>
           <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[activeStep].title}</h2>
           {sections[activeStep].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[activeStep].description}</p> : null}
+          {!singleItem && sections[activeStep].id === "booking" ? (
+            <AssignedOutfitProducts answers={answers} />
+          ) : null}
+          {!singleItem && CORE_PRODUCT_IDS.includes(sections[activeStep].id as (typeof CORE_PRODUCT_IDS)[number]) ? (
+            <p className="mt-3 rounded-2xl bg-[#3f472d0d] px-4 py-3 text-sm font-bold leading-7 text-[var(--olive)]">
+              هذه القطعة مشمولة تلقائياً في الزي الكامل. خصّص الخيارات المتاحة أدناه. لا يمكن إضافة أو حذف أو استبدال المنتج.
+            </p>
+          ) : null}
           {activeProductImage ? (
             <div className="mt-4 overflow-hidden rounded-[1.2rem] border border-[var(--border)] bg-white">
               <OptimizedThumb src={activeProductImage} alt={sections[activeStep].title} sizes="(max-width: 768px) 100vw, 640px" eager />
@@ -214,6 +229,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
                 files={files[field.key] ?? []}
                 error={errors[field.key]}
                 bookingType={answers.booking_type}
+                productSelectionLocked={!singleItem && field.key === "selected_products"}
                 prioritizeImages={fieldIndex === 0}
                 onChange={(value) => setAnswer(field.key, value)}
                 onFiles={(next) => setFiles((current) => ({ ...current, [field.key]: next }))}
@@ -281,12 +297,33 @@ function SuccessCard({ success }: { success: SuccessState }) {
   );
 }
 
+function AssignedOutfitProducts({ answers }: { answers: Record<string, unknown> }) {
+  const products = asStringList(answers.selected_products).filter((id): id is (typeof CORE_PRODUCT_IDS)[number] =>
+    CORE_PRODUCT_IDS.includes(id as (typeof CORE_PRODUCT_IDS)[number])
+  );
+  const ordered = products.length ? products : [...CORE_PRODUCT_IDS];
+  return (
+    <div className="mt-4 rounded-[1.2rem] border border-[var(--border)] bg-[#3f472d0d] p-4">
+      <p className="text-sm font-black text-[var(--olive-dark)]">المنتجات المشمولة في هذا الزي</p>
+      <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
+        هذه القطع ثابتة حسب إعداد الإدارة. يمكنك تخصيص كل قطعة لاحقاً، ولا يمكن إضافة أو حذف أو استبدال منتج.
+      </p>
+      <ul className="mt-3 grid gap-1 text-sm font-bold text-[var(--olive-dark)]">
+        {ordered.map((product) => (
+          <li key={product}>- {CORE_PRODUCT_LABELS[product]}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function FieldRenderer({
   field,
   value,
   files,
   error,
   bookingType,
+  productSelectionLocked = false,
   prioritizeImages = false,
   onChange,
   onFiles
@@ -296,6 +333,7 @@ function FieldRenderer({
   files: UploadedFile[];
   error?: string;
   bookingType?: unknown;
+  productSelectionLocked?: boolean;
   prioritizeImages?: boolean;
   onChange: (value: unknown) => void;
   onFiles: (files: UploadedFile[]) => void;
@@ -346,23 +384,30 @@ function FieldRenderer({
             .filter((option) => optionVisibleForBooking(option, bookingType))
             .map((option) => {
               const selected = asStringList(value).includes(option.value);
+              const locked = Boolean(field.locked || productSelectionLocked);
               return (
                 <button
                   key={option.id}
                   type="button"
+                  disabled={locked}
                   aria-pressed={selected}
                   onClick={() => {
+                    if (locked) return;
                     const current = asStringList(value);
                     onChange(selected ? current.filter((entry) => entry !== option.value) : [...current, option.value]);
                   }}
                   className={cn(
                     "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
-                    selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70"
+                    selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70",
+                    locked && "opacity-90"
                   )}
                 >
                   <span>
                     <span className="block text-base font-black text-[var(--olive-dark)]">{option.label}</span>
                     {option.description ? <span className="mt-1 block text-sm text-[var(--muted)]">{option.description}</span> : null}
+                    {locked && field.key === "selected_products" ? (
+                      <span className="mt-2 block text-xs font-bold text-[var(--olive)]">قطعة ثابتة في الزي الكامل</span>
+                    ) : null}
                   </span>
                   <span
                     className={cn(

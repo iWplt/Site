@@ -150,7 +150,7 @@ export function FormOutfitWorkspace({
           <Card>
             <h2 className="text-xl font-black text-[var(--olive-dark)]">الأزياء الكاملة</h2>
             <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
-              كل زي إعداد فوق منتجات النموذج: روب ووشاح وقبعة دائماً. يمكن تغيير الاسم والصورة والترتيب، ولا يمكن حذف القطع من الزي الكامل.
+              كل زي إعداد فوق منتجات النموذج: روب ووشاح وقبعة دائماً. الطالب يخصص كل قطعة، ولا يمكنه إضافة أو حذف أو استبدال المنتجات.
             </p>
             <div className="mt-4 grid gap-3">
               {config.fullOutfits.map((outfit, index) => (
