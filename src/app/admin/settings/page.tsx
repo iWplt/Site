@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui";
+import { BookingWorkspaceNav } from "@/components/booking-workspace-nav";
 import { CreateOwnerForm } from "@/components/create-owner-form";
 import { requireUser } from "@/lib/auth";
 import { getActivePersistenceMode } from "@/lib/data";
@@ -13,8 +14,17 @@ export default async function SettingsPage() {
   return (
     <div className="grid gap-4 sm:gap-6">
       <div>
-        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الإعدادات</h1>
+        <p className="text-sm font-bold text-[var(--gold)]">إدارة الحجوزات والمنتجات</p>
+        <h1 className="text-3xl font-black text-[var(--olive-dark)] sm:text-4xl">الصلاحيات والإعدادات</h1>
       </div>
+      <BookingWorkspaceNav
+        items={[
+          { href: "/admin/batches", label: "الدفعات" },
+          { href: "/admin/forms", label: "النماذج والزي" },
+          { href: "/admin/products", label: "المنتجات المتاحة" },
+          { href: "/admin/settings", label: "الصلاحيات", current: true }
+        ]}
+      />
       <Card>
         <h2 className="text-2xl font-black text-[var(--olive-dark)]">مصدر البيانات</h2>
         <p className="mt-3 rounded-2xl bg-white/60 p-4 font-bold text-[var(--olive)]">{persistenceLabel(mode)}</p>

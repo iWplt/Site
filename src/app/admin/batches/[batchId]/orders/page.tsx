@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { BookingWorkspaceNav, batchWorkspaceItems } from "@/components/booking-workspace-nav";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getBatch, listSubmissions } from "@/lib/data";
@@ -23,6 +24,13 @@ export default async function BatchOrdersPage({ params }: { params: Promise<{ ba
           رجوع للدفعة
         </LinkButton>
       </div>
+      <BookingWorkspaceNav
+        items={batchWorkspaceItems({
+          batchId,
+          formId: batch.form?.id,
+          current: "orders"
+        })}
+      />
       <Card>
         <div className="grid gap-3">
           {orders.map((order) => (

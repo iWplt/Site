@@ -51,6 +51,7 @@ import {
   sbSaveFixedOptions,
   sbSetAccessCodeStatus,
   sbSetFormStatus,
+  sbSetBatchStatus,
   sbSubmitBooking,
   sbToggleRepresentative,
   sbUpdateFormFieldMeta,
@@ -961,6 +962,35 @@ export async function setFormStatusAction(formId: string, status: FormStatus) {
     });
   }
   revalidateAdmin();
+}
+
+export async function archiveFormAction(formData: FormData) {
+  const formId = String(formData.get("formId") ?? "").trim();
+  if (!formId) throw new Error("النموذج غير موجود.");
+  await setFormStatusAction(formId, "archived");
+  redirect("/admin/forms");
+}
+
+export async function archiveBatchAction(formData: FormData) {
+  await requireUser(["OWNER"]);
+  const batchId = String(formData.get("batchId") ?? "").trim();
+  if (!batchId) throw new Error("الدفعة غير موجودة.");
+  if (assertPersistenceAllowed() === "supabase") {
+    await sbSetBatchStatus(batchId, "archived");
+  } else {
+    mutateDb((db) => {
+      const batch = db.batches.find((entry) => entry.id === batchId);
+      if (!batch) throw new Error("الدفعة غير موجودة.");
+      batch.status = "archived";
+      batch.updated_at = new Date().toISOString();
+      for (const form of db.forms) {
+        if (form.batch_id === batchId && form.status === "published") form.status = "closed";
+      }
+      audit(db, "BATCH_STATUS_CHANGED", "batch", batchId, { label: "owner" }, { status: "archived" });
+    });
+  }
+  revalidateAdmin(batchId);
+  redirect("/admin/batches");
 }
 
 export async function updateFormUploadSettingsAction(

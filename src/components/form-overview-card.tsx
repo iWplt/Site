@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { duplicateFormAction, setFormStatusAction } from "@/app/actions";
+import { duplicateFormAction, setFormStatusAction, archiveFormAction } from "@/app/actions";
+import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { Badge, Button, LinkButton } from "@/components/ui";
 import { formStatusLabels } from "@/lib/labels";
@@ -92,6 +93,13 @@ export function FormOverviewCard({
                 نسخ النموذج
               </Button>
             </form>
+            <ArchiveConfirmButton
+              label="أرشفة"
+              title={`أرشفة «${form.name}»؟`}
+              warning="لن تُحذف الحجوزات أو الملفات أو لقطات الطلب السابقة. النموذج سيختفي من القائمة النشطة ويتوقف الحجز العام. الطلبات القديمة تبقى قابلة للقراءة."
+              action={archiveFormAction}
+              hiddenFields={{ formId: form.id }}
+            />
           </>
         ) : null}
         <CopyLinkButton value={publicUrl} />

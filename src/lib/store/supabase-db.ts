@@ -38,6 +38,7 @@ import type {
   AccessCodeStatus,
   Batch,
   BatchStats,
+  BatchStatus,
   BookingFormRecord,
   FormDefinition,
   FormOption,
@@ -513,11 +514,12 @@ export type BatchWithStats = Batch & { stats: BatchStats; form?: BookingFormReco
 /* READS                                                                                         */
 /* -------------------------------------------------------------------------------------------- */
 
-export async function sbListBatches(user: AppUser): Promise<BatchWithStats[]> {
+export async function sbListBatches(user: AppUser, options?: { archived?: boolean }): Promise<BatchWithStats[]> {
   const admin = createAdminClient();
-  const builder = admin.from("batches").select("*, representative:profiles!representative_id(full_name)").order("created_at", {
+  let builder = admin.from("batches").select("*, representative:profiles!representative_id(full_name)").order("created_at", {
     ascending: false
   });
+  builder = options?.archived ? builder.eq("status", "archived") : builder.neq("status", "archived");
 
   const scoped =
     user.role === "OWNER" ? builder : builder.in("id", await resolveRepresentativeBatchIds(admin, user));
@@ -623,14 +625,14 @@ function canAccessFormRow(user: AppUser, row: Pick<BookingFormRow, "batch_id">, 
   return batchIds.includes(row.batch_id);
 }
 
-export async function sbListFormSummaries(user: AppUser): Promise<import("@/lib/types").FormSummary[]> {
+export async function sbListFormSummaries(user: AppUser, options?: { archived?: boolean }): Promise<import("@/lib/types").FormSummary[]> {
   const admin = createAdminClient();
+  const archived = Boolean(options?.archived);
 
   if (user.role === "OWNER") {
-    const { data, error } = await admin
-      .from("booking_forms")
-      .select(`${FORM_SUMMARY_COLUMNS},definition`)
-      .order("created_at", { ascending: false });
+    let query = admin.from("booking_forms").select(`${FORM_SUMMARY_COLUMNS},definition`).order("created_at", { ascending: false });
+    query = archived ? query.eq("status", "archived") : query.neq("status", "archived");
+    const { data, error } = await query;
     if (error) throw new Error(pgErrorMessage(error, "تعذر تحميل النماذج."));
     return ((data ?? []) as BookingFormRow[]).map((row) => toFormSummary(mapFormRow(row)));
   }
@@ -641,7 +643,10 @@ export async function sbListFormSummaries(user: AppUser): Promise<import("@/lib/
     : { data: [] as BookingFormRow[], error: null };
   if (batchFormsResult.error) throw new Error(pgErrorMessage(batchFormsResult.error, "تعذر تحميل النماذج."));
 
-  const merged = ((batchFormsResult.data ?? []) as BookingFormRow[]).filter((row) => row.batch_id);
+  const merged = ((batchFormsResult.data ?? []) as BookingFormRow[]).filter((row) => {
+    if (!row.batch_id) return false;
+    return archived ? row.status === "archived" : row.status !== "archived";
+  });
   merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
   return merged.map((row) => toFormSummary(mapFormRow(row)));
 }
@@ -2056,6 +2061,18 @@ export async function sbSetFormStatus(formId: string, status: FormStatus) {
   if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث حالة النموذج."));
   if (!data) throw new Error("النموذج غير موجود.");
   await sbAudit(admin, "FORM_STATUS_CHANGED", "booking_form", formId, undefined, { status });
+}
+
+export async function sbSetBatchStatus(batchId: string, status: BatchStatus) {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("batches").update({ status }).eq("id", batchId).select("id").maybeSingle();
+  if (error) throw new Error(pgErrorMessage(error, "تعذر تحديث حالة الدفعة."));
+  if (!data) throw new Error("الدفعة غير موجودة.");
+  if (status === "archived") {
+    await admin.from("booking_forms").update({ status: "closed" }).eq("batch_id", batchId).eq("status", "published");
+  }
+  await sbAudit(admin, "BATCH_STATUS_CHANGED", "batch", batchId, undefined, { status });
 }
 
 export type FormUploadSettingUpdate = {

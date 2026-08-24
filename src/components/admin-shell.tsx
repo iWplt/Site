@@ -28,29 +28,75 @@ import { logoutAction } from "@/app/actions";
 import type { AppUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const ownerNav = [
+type NavLink = { href: string; label: string; icon: typeof Home };
+type NavGroup = { label: string; items: NavLink[] };
+
+const ownerNav: Array<NavLink | NavGroup> = [
   { href: "/admin", label: "لوحة التحكم", icon: Home },
-  { href: "/admin/batches", label: "الدفعات", icon: GraduationCap },
+  {
+    label: "إدارة الحجوزات والمنتجات",
+    items: [
+      { href: "/admin/batches", label: "الدفعات", icon: GraduationCap },
+      { href: "/admin/forms", label: "النماذج والزي", icon: FileText },
+      { href: "/admin/products", label: "المنتجات المتاحة", icon: Package },
+      { href: "/admin/settings", label: "الصلاحيات", icon: Settings }
+    ]
+  },
   { href: "/admin/students", label: "الطلاب", icon: Users },
   { href: "/admin/representatives", label: "الممثلون", icon: UserRound },
   { href: "/admin/import", label: "الاستيراد", icon: Upload },
-  { href: "/admin/forms", label: "النماذج", icon: FileText },
-  { href: "/admin/products", label: "المنتجات", icon: Package },
   { href: "/admin/orders", label: "الطلبات", icon: ClipboardList },
   { href: "/admin/pickup", label: "الاستلام", icon: ScanLine },
   { href: "/admin/search", label: "بحث", icon: Search },
   { href: "/admin/export", label: "تصدير", icon: Upload },
-  { href: "/admin/audit", label: "سجل التدقيق", icon: History },
-  { href: "/admin/settings", label: "الإعدادات", icon: Settings }
+  { href: "/admin/audit", label: "سجل التدقيق", icon: History }
 ];
 
-const repNav = [
+const repNav: Array<NavLink | NavGroup> = [
   { href: "/admin", label: "لوحة التحكم", icon: Home },
   { href: "/admin/search", label: "بحث", icon: Search },
   { href: "/admin/batches", label: "دفعاتي", icon: GraduationCap },
   { href: "/admin/orders", label: "طلبات دفعاتي", icon: ClipboardList },
   { href: "/admin/pickup", label: "الاستلام", icon: ScanLine }
 ];
+
+function isActivePath(href: string, pathname: string) {
+  if (href === "/admin") return pathname === "/admin";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function NavLinks({
+  items,
+  pathname,
+  onNavigate
+}: {
+  items: NavLink[];
+  pathname: string;
+  onNavigate: (href: string) => void;
+}) {
+  return (
+    <>
+      {items.map((item) => {
+        const active = isActivePath(item.href, pathname);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            prefetch
+            onClick={() => onNavigate(item.href)}
+            className={cn(
+              "flex min-h-11 items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-bold",
+              active ? "bg-[var(--olive)] text-[var(--paper)]" : "text-[var(--olive)] hover:bg-[#3f472d0d]"
+            )}
+          >
+            <item.icon size={18} />
+            {item.label}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
 
 export function AdminShell({ children, user }: { children: React.ReactNode; user: AppUser }) {
   const nav = user.role === "OWNER" ? ownerNav : repNav;
@@ -102,21 +148,40 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
             <p className="text-xs font-bold text-[var(--gold)]">{user.role === "OWNER" ? "مالك النظام" : "ممثل دفعة"}</p>
           </div>
           <nav className="mt-6 grid grid-cols-1 gap-2">
-            {nav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch
-                onClick={() => {
-                  setOpen(false);
-                  if (item.href !== pathname) setPendingHref(item.href);
-                }}
-                className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-[var(--olive)] hover:bg-[#3f472d0d]"
-              >
-                <item.icon size={18} />
-                {item.label}
-              </Link>
-            ))}
+            {nav.map((entry) => {
+              if ("items" in entry) {
+                const groupActive = entry.items.some((item) => isActivePath(item.href, pathname));
+                return (
+                  <div
+                    key={entry.label}
+                    className={cn("rounded-[1.35rem] p-2", groupActive ? "bg-[#3f472d14]" : "bg-[#3f472d08]")}
+                  >
+                    <p className="px-3 pb-2 pt-1 text-[11px] font-black tracking-wide text-[var(--gold)]">{entry.label}</p>
+                    <div className="grid gap-1">
+                      <NavLinks
+                        items={entry.items}
+                        pathname={pathname}
+                        onNavigate={(href) => {
+                          setOpen(false);
+                          if (href !== pathname) setPendingHref(href);
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <NavLinks
+                  key={entry.href}
+                  items={[entry]}
+                  pathname={pathname}
+                  onNavigate={(href) => {
+                    setOpen(false);
+                    if (href !== pathname) setPendingHref(href);
+                  }}
+                />
+              );
+            })}
           </nav>
           <form action={logoutAction} className="mt-4">
             <LogoutButton />

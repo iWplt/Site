@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
-import { duplicateFormAction, setFormStatusAction } from "@/app/actions";
+import { duplicateFormAction, setFormStatusAction, archiveFormAction } from "@/app/actions";
+import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { BatchUniformForm } from "@/components/batch-uniform-form";
+import { BookingWorkspaceNav, formWorkspaceItems } from "@/components/booking-workspace-nav";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { FormOutfitWorkspace } from "@/components/form-outfit-workspace";
 import { FormFieldsManager } from "@/components/form-fields-manager";
@@ -74,6 +76,14 @@ export default async function FormManagePage({
         </div>
       </div>
 
+      <BookingWorkspaceNav
+        items={formWorkspaceItems({
+          formId: form.id,
+          batchId: form.batch_id,
+          current: tab === "outfits" ? "outfits" : tab === "products" ? "products" : "form"
+        })}
+      />
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Meta label="نوع النموذج" value={form.type === "INDIVIDUAL" ? "حجز فردي" : "دفعة"} />
         <Meta label="الرابط" value={publicPath} ltr />
@@ -111,6 +121,15 @@ export default async function FormManagePage({
                 نسخ النموذج
               </Button>
             </form>
+            {form.status !== "archived" ? (
+              <ArchiveConfirmButton
+                label="أرشفة النموذج"
+                title={`أرشفة «${form.name}»؟`}
+                warning="لن تُحذف الحجوزات أو الملفات أو لقطات الطلب السابقة. النموذج سيختفي من القائمة النشطة ويتوقف الحجز العام."
+                action={archiveFormAction}
+                hiddenFields={{ formId: form.id }}
+              />
+            ) : null}
           </>
         ) : null}
       </div>

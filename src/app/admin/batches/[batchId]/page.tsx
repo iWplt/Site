@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
+import { archiveBatchAction } from "@/app/actions";
+import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { BatchUniformForm } from "@/components/batch-uniform-form";
+import { BookingWorkspaceNav, batchWorkspaceItems } from "@/components/booking-workspace-nav";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getBatch, getFixedOptions, getPublicForm, listStudents, listSubmissions } from "@/lib/data";
@@ -56,6 +59,14 @@ export default async function BatchDetailPage({
         <Badge>{statusLabels[batch.status]}</Badge>
       </div>
 
+      <BookingWorkspaceNav
+        items={batchWorkspaceItems({
+          batchId: batch.id,
+          formId: batch.form?.id,
+          current: "batch"
+        })}
+      />
+
       <div className="flex flex-wrap gap-2">
         <LinkButton href={`/admin/batches/${batch.id}`} variant="secondary">نظرة عامة</LinkButton>
         <LinkButton href={`/admin/batches/${batch.id}/students`} variant="secondary">الطلاب</LinkButton>
@@ -63,7 +74,22 @@ export default async function BatchDetailPage({
         <LinkButton href={batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms"} variant="secondary">
           النموذج
         </LinkButton>
+        {batch.form ? (
+          <LinkButton href={`/admin/forms/${batch.form.id}?tab=outfits`} variant="secondary">
+            الزي والمنتجات
+          </LinkButton>
+        ) : null}
+        <LinkButton href="/admin/products" variant="secondary">المنتجات</LinkButton>
         <LinkButton href="/admin/representatives" variant="secondary">الممثلون</LinkButton>
+        {user.role === "OWNER" && batch.status !== "archived" ? (
+          <ArchiveConfirmButton
+            label="أرشفة الدفعة"
+            title={`أرشفة «${batch.name}»؟`}
+            warning="لن تُحذف الحجوزات أو الملفات السابقة. الدفعة ستختفي من القائمة النشطة، وسيُغلق نموذج الحجز العام. الطلبات القديمة تبقى قابلة للقراءة."
+            action={archiveBatchAction}
+            hiddenFields={{ batchId: batch.id }}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

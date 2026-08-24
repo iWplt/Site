@@ -52,11 +52,12 @@ export function getActivePersistenceMode() {
   return assertPersistenceAllowed();
 }
 
-export async function listBatches(user: AppUser): Promise<BatchWithStats[]> {
-  if (assertPersistenceAllowed() === "supabase") return sbListBatches(user);
+export async function listBatches(user: AppUser, options?: { archived?: boolean }): Promise<BatchWithStats[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListBatches(user, options);
 
   const db = ensureLocal();
   const batches = db.batches.filter((batch) => {
+    if (Boolean(options?.archived) !== (batch.status === "archived")) return false;
     if (user.role === "OWNER") return true;
     return db.profiles.find((profile) => profile.id === user.id)?.batch_ids.includes(batch.id);
   });
@@ -112,12 +113,13 @@ export async function listStudents(
   );
 }
 
-export async function listFormSummaries(user: AppUser): Promise<FormSummary[]> {
-  if (assertPersistenceAllowed() === "supabase") return sbListFormSummaries(user);
+export async function listFormSummaries(user: AppUser, options?: { archived?: boolean }): Promise<FormSummary[]> {
+  if (assertPersistenceAllowed() === "supabase") return sbListFormSummaries(user, options);
 
   const db = ensureLocal();
   return db.forms
     .filter((form) => {
+      if (Boolean(options?.archived) !== (form.status === "archived")) return false;
       if (user.role === "OWNER") return true;
       if (!form.batch_id) return false;
       return db.profiles.find((profile) => profile.id === user.id)?.batch_ids.includes(form.batch_id);
