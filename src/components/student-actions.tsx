@@ -45,7 +45,7 @@ export function IndividualStudentActions({
   const [pending, startTransition] = useTransition();
   const slug = studentPublicFormSlug(student);
   const path = slug ? publicFormPath(slug) : null;
-  const bookingUrl = path ? publicFormUrl(typeof window !== "undefined" ? window.location.origin : origin, slug!) : null;
+  const bookingUrl = path ? publicFormUrl(origin, slug!) : null;
 
   return (
     <div className="mt-3 grid gap-2">

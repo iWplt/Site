@@ -100,10 +100,10 @@ export function validateRuntimeEnvironment(): EnvValidationResult {
           "WARKA production requires ACCESS_CODE_ENCRYPTION_KEY, ACCESS_CODE_HMAC_SECRET, and BOOKING_SESSION_SECRET."
       };
     }
-    if (!process.env.NEXT_PUBLIC_APP_URL?.trim() && !process.env.URL?.trim()) {
+    if (!process.env.NEXT_PUBLIC_APP_URL?.trim()) {
       return {
         ok: false,
-        error: "WARKA production requires NEXT_PUBLIC_APP_URL (or Netlify URL) for booking, receipt, and QR links."
+        error: "WARKA production requires NEXT_PUBLIC_APP_URL for booking, receipt, and QR links."
       };
     }
     return { ok: true, mode: "supabase" };

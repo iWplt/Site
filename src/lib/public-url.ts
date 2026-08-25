@@ -1,21 +1,13 @@
 import { headers } from "next/headers";
 import { isProductionRuntime } from "@/lib/env";
 
-function netlifyHttpsOrigin() {
-  const raw = process.env.URL?.trim() || process.env.DEPLOY_PRIME_URL?.trim();
-  if (!raw) return "";
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== "https:") return "";
-    if (/localhost|127\.0\.0\.1/i.test(parsed.hostname)) return "";
-    return parsed.origin;
-  } catch {
-    return "";
-  }
-}
-
+/**
+ * Canonical public origin for booking links, QR, receipts, and copy-link UI.
+ * Single source of truth: NEXT_PUBLIC_APP_URL (no trailing slash).
+ * Production must be https://graduation.warka.workers.dev
+ */
 export function configuredAppUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") || netlifyHttpsOrigin();
+  return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") || "";
 }
 
 export async function requestOrigin() {
