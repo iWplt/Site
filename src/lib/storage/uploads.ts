@@ -4,6 +4,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getPersistenceMode } from "@/lib/persistence";
+import {
+  formProductImageStorageKey,
+  outfitCoverImageStorageKey,
+  outfitProductImageStorageKey
+} from "@/lib/form-image-storage-keys";
 import { extensionForMime, sanitizeStorageSegment, stableStorageSegment } from "@/lib/upload-security";
 import {
   sbDeleteOptionImage,
@@ -118,20 +123,17 @@ export type StoredOutfitAsset = {
   imageUrl?: string;
 };
 
-/**
- * Stores an Owner-managed outfit or outfit-product image in the same form-options
- * bucket as option reference photos. The caller persists paths onto `outfitConfig`.
- */
-export async function storeOutfitAsset(
+function relativeFormAssetKey(formId: string, fullKey: string) {
+  const prefix = `${stableStorageSegment(formId)}/`;
+  if (!fullKey.startsWith(prefix)) throw new Error("مسار الملف غير صالح.");
+  return fullKey.slice(prefix.length);
+}
+
+async function storeFormOptionsRelativeAsset(
   formId: string,
-  outfitId: string,
-  productId: string | undefined,
+  relativeKey: string,
   file: UploadInputFile
 ): Promise<StoredOutfitAsset> {
-  const relativeKey = productId
-    ? `outfits/${stableStorageSegment(outfitId)}/products/${stableStorageSegment(productId)}`
-    : `outfits/${stableStorageSegment(outfitId)}/cover`;
-
   if (getPersistenceMode() === "supabase") {
     const { sbUploadOutfitAssetFile } = await import("@/lib/store/supabase-db");
     return sbUploadOutfitAssetFile(formId, relativeKey, file);
@@ -142,6 +144,33 @@ export async function storeOutfitAsset(
   const relativeDir = join("uploads", "form-options", stableStorageSegment(formId), ...relativeKey.split("/"));
   const imagePath = writePublicFile(relativeDir, fileName, file.buffer);
   return { imagePath, imageUrl: imagePath };
+}
+
+/**
+ * Stores an Owner-managed outfit or outfit-product image in the same form-options
+ * bucket as option reference photos. The caller persists paths onto `outfitConfig`.
+ * Cover and membership images use distinct keys and never share a Form Product path.
+ */
+export async function storeOutfitAsset(
+  formId: string,
+  outfitId: string,
+  productId: string | undefined,
+  file: UploadInputFile
+): Promise<StoredOutfitAsset> {
+  const fullKey = productId
+    ? outfitProductImageStorageKey(formId, outfitId, productId)
+    : outfitCoverImageStorageKey(formId, outfitId);
+  return storeFormOptionsRelativeAsset(formId, relativeFormAssetKey(formId, fullKey), file);
+}
+
+/** Form-level product image (default/fallback). Independent of catalog and outfit membership images. */
+export async function storeFormProductAsset(
+  formId: string,
+  productId: string,
+  file: UploadInputFile
+): Promise<StoredOutfitAsset> {
+  const fullKey = formProductImageStorageKey(formId, productId);
+  return storeFormOptionsRelativeAsset(formId, relativeFormAssetKey(formId, fullKey), file);
 }
 
 export async function deleteOutfitAssetFile(imagePath: string | undefined) {

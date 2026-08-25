@@ -31,7 +31,19 @@ import {
   type UniformSelectionMap
 } from "@/lib/form-uniform";
 import { resolveOutfitAnswers, applyOutfitArchitecture, sanitizeOutfitConfig, normalizeCatalogAssignment } from "@/lib/outfit-architecture";
+import { patchFormProductImage, patchOutfitScopedImage, preserveImageScopesOnConfigSave } from "@/lib/form-image-scope";
 import { catalogProductIdFromOptionRef, isArchitectureOptionFieldKey, optionMatchesRef } from "@/lib/form-option-identity";
+import { applyStudentPermissionsToDefinition } from "@/lib/apply-student-permissions";
+import {
+  normalizeStudentPermissionPolicy,
+  normalizeStudentPermissions,
+  resolveStudentPermissions,
+  clampOverrideToCeiling,
+  representativeMayConfigurePermissions,
+  type StudentCustomizationPermissions,
+  type StudentPermissionOverride,
+  type StudentPermissionPolicy
+} from "@/lib/student-permissions";
 import { withCatalogDefinition } from "@/lib/store/catalog-store";
 import { toFormSummary } from "@/lib/form-summary";
 import type {
@@ -113,6 +125,7 @@ type BatchRow = {
   description: string | null;
   representative_id: string | null;
   status: Batch["status"];
+  student_permission_policy?: unknown;
   created_at: string;
   updated_at: string;
   representative?: { full_name: string } | null;
@@ -129,6 +142,7 @@ type BookingFormRow = {
   opening_date: string | null;
   closing_date: string | null;
   definition: unknown;
+  student_permission_policy?: unknown;
   created_at: string;
   updated_at: string;
 };
@@ -140,6 +154,7 @@ type StudentOverviewRow = {
   phone: string | null;
   address: string | null;
   notes: string | null;
+  customization_permissions?: unknown;
   created_at: string;
   updated_at: string;
   batch_name: string | null;
@@ -284,6 +299,9 @@ function mapBatchRow(row: BatchRow): Batch {
     description: row.description ?? undefined,
     representative_id: row.representative_id ?? undefined,
     representative_name: row.representative?.full_name ?? undefined,
+    student_permission_policy: normalizeStudentPermissionPolicy(
+      row.student_permission_policy as StudentPermissionPolicy | null | undefined
+    ),
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -301,6 +319,9 @@ function mapFormRow(row: BookingFormRow): BookingFormRecord {
     batch_id: row.batch_id ?? undefined,
     opening_date: row.opening_date ?? undefined,
     closing_date: row.closing_date ?? undefined,
+    student_permission_policy: normalizeStudentPermissionPolicy(
+      row.student_permission_policy as StudentPermissionPolicy | null | undefined
+    ),
     created_at: row.created_at,
     updated_at: row.updated_at,
     definition: normalizeLiveFormDefinition(rawDefinition)
@@ -315,6 +336,7 @@ function mapStudentOverviewRow(row: StudentOverviewRow): StudentWithState {
     phone: row.phone ?? undefined,
     address: row.address ?? undefined,
     notes: row.notes ?? undefined,
+    customization_permissions: (row.customization_permissions as StudentPermissionOverride | null) ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     batch: row.batch_name ? { name: row.batch_name, graduation_year: row.graduation_year ?? 0 } : undefined,
@@ -1123,12 +1145,16 @@ export async function sbSubmitBooking(
   }
   const formRecord = await resolveFormRowImages(formRow as BookingFormRow);
   const cataloged = await withCatalogDefinition(formRecord);
-  const definition = applyUniformToDefinition(cataloged.definition, fixed);
+  const permissions = await resolvePermissionsForBooking(admin, cataloged, session.studentId);
+  const definition = applyStudentPermissionsToDefinition(
+    applyUniformToDefinition(cataloged.definition, fixed),
+    permissions
+  );
   const finalAnswers = resolveOutfitAnswers(
     definition,
     enforceUniformAnswers({ ...answers, student_name: session.studentName }, fixed)
   );
-  const validation = validateDynamicAnswers(definition, finalAnswers, files);
+  const validation = validateDynamicAnswers(definition, finalAnswers, files, permissions);
   if (!validation.valid) return { ok: false, error: "يرجى مراجعة الحقول المطلوبة." };
 
   const snapshot = buildOrderSnapshot({
@@ -2204,9 +2230,10 @@ export async function sbUpdateFormOutfitConfig(formId: string, config: OutfitCon
   requireSupabaseSecretsForWrites();
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const existing = sanitizeOutfitConfig(definition.outfitConfig);
   const nextDefinition: FormDefinition = {
     ...definition,
-    outfitConfig: sanitizeOutfitConfig(config)
+    outfitConfig: preserveImageScopesOnConfigSave(existing, sanitizeOutfitConfig(config))
   };
   const { error } = await admin.from("booking_forms").update({ definition: nextDefinition }).eq("id", formId);
   if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ إعدادات الزي."));
@@ -2452,6 +2479,16 @@ export async function sbResolveDefinitionImages(definition: FormDefinition): Pro
   const outfitConfig = definition.outfitConfig
     ? {
         ...definition.outfitConfig,
+        formProductImages: definition.outfitConfig.formProductImages
+          ? Object.fromEntries(
+              await Promise.all(
+                Object.entries(definition.outfitConfig.formProductImages).map(async ([productId, image]) => {
+                  const url = image.imagePath ? await sbResolveOptionImageUrl(image.imagePath) : image.imageUrl;
+                  return [productId, { ...image, imageUrl: url }] as const;
+                })
+              )
+            )
+          : definition.outfitConfig.formProductImages,
         fullOutfits: await Promise.all(
           (definition.outfitConfig.fullOutfits ?? []).map(async (outfit) => {
             const imageUrl = outfit.imagePath ? await sbResolveOptionImageUrl(outfit.imagePath) : outfit.imageUrl;
@@ -2591,23 +2628,28 @@ export async function sbPatchOutfitImage(
   const admin = createAdminClient();
   const definition = await fetchFormDefinitionOrThrow(admin, formId);
   const config = sanitizeOutfitConfig(definition.outfitConfig);
-  const nextOutfits = config.fullOutfits.map((outfit) => {
-    if (outfit.id !== outfitId) return outfit;
-    if (!productId) {
-      return { ...outfit, imagePath: image?.imagePath, imageUrl: image?.imageUrl };
-    }
-    const productImages = { ...(outfit.productImages ?? {}) };
-    if (!image) delete productImages[productId];
-    else productImages[productId] = image;
-    return { ...outfit, productImages: Object.keys(productImages).length ? productImages : undefined };
-  });
-  const nextConfig = sanitizeOutfitConfig({ ...config, fullOutfits: nextOutfits });
+  const nextConfig = patchOutfitScopedImage(config, outfitId, productId, image);
   const { error } = await admin.from("booking_forms").update({ definition: { ...definition, outfitConfig: nextConfig } }).eq("id", formId);
   if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صورة الزي."));
   await sbAudit(admin, productId ? "FORM_OUTFIT_PRODUCT_IMAGE_UPDATED" : "FORM_OUTFIT_IMAGE_UPDATED", "booking_form", formId, undefined, {
     outfitId,
     productId
   });
+  return nextConfig;
+}
+
+export async function sbPatchFormProductImage(
+  formId: string,
+  productId: CoreProductId,
+  image: { imagePath?: string; imageUrl?: string } | null
+): Promise<OutfitConfig> {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const definition = await fetchFormDefinitionOrThrow(admin, formId);
+  const nextConfig = patchFormProductImage(sanitizeOutfitConfig(definition.outfitConfig), productId, image);
+  const { error } = await admin.from("booking_forms").update({ definition: { ...definition, outfitConfig: nextConfig } }).eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صورة منتج النموذج."));
+  await sbAudit(admin, "FORM_PRODUCT_IMAGE_UPDATED", "booking_form", formId, undefined, { productId });
   return nextConfig;
 }
 
@@ -2783,7 +2825,133 @@ export async function sbGetEffectivePublicForm(slug: string, studentId?: string 
   const form = await resolveFormRowImages(data as BookingFormRow);
   const cataloged = await withCatalogDefinition(form);
   const fixed = await sbLoadFixedOptions(admin, form.id, studentId);
-  return { ...cataloged, definition: applyUniformToDefinition(cataloged.definition, fixed) };
+  const permissions = await resolvePermissionsForBooking(admin, cataloged, studentId);
+  return {
+    ...cataloged,
+    definition: applyStudentPermissionsToDefinition(
+      applyUniformToDefinition(cataloged.definition, fixed),
+      permissions
+    )
+  };
+}
+
+async function resolvePermissionsForBooking(
+  admin: SupabaseAdminClient,
+  form: BookingFormRecord,
+  studentId?: string | null
+): Promise<StudentCustomizationPermissions> {
+  let policy = normalizeStudentPermissionPolicy(form.student_permission_policy);
+  if (form.batch_id) {
+    const { data: batch } = await admin
+      .from("batches")
+      .select("student_permission_policy")
+      .eq("id", form.batch_id)
+      .maybeSingle();
+    if (batch?.student_permission_policy) {
+      policy = normalizeStudentPermissionPolicy(batch.student_permission_policy as StudentPermissionPolicy);
+    }
+  }
+  let override: StudentPermissionOverride | null = null;
+  if (studentId) {
+    const { data: student } = await admin
+      .from("students")
+      .select("customization_permissions")
+      .eq("id", studentId)
+      .maybeSingle();
+    override = (student?.customization_permissions as StudentPermissionOverride | null) ?? null;
+  }
+  return resolveStudentPermissions({ policy, override, allowAboveCeiling: false });
+}
+
+export async function sbUpdateBatchPermissionPolicy(
+  user: AppUser,
+  batchId: string,
+  policy: StudentPermissionPolicy
+): Promise<void> {
+  if (user.role !== "OWNER") throw new Error("غير مصرح.");
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const normalized = normalizeStudentPermissionPolicy(policy);
+  const { error } = await admin
+    .from("batches")
+    .update({ student_permission_policy: normalized, updated_at: new Date().toISOString() })
+    .eq("id", batchId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صلاحيات الدفعة."));
+}
+
+export async function sbUpdateFormPermissionPolicy(
+  user: AppUser,
+  formId: string,
+  policy: StudentPermissionPolicy
+): Promise<void> {
+  if (user.role !== "OWNER") throw new Error("غير مصرح.");
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const normalized = normalizeStudentPermissionPolicy(policy);
+  const { error } = await admin
+    .from("booking_forms")
+    .update({ student_permission_policy: normalized, updated_at: new Date().toISOString() })
+    .eq("id", formId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صلاحيات النموذج."));
+}
+
+export async function sbUpdateStudentCustomizationPermissions(
+  user: AppUser,
+  studentId: string,
+  override: StudentPermissionOverride | null
+): Promise<void> {
+  requireSupabaseSecretsForWrites();
+  const admin = createAdminClient();
+  const { data: student, error: studentError } = await admin
+    .from("students")
+    .select("id,batch_id,customization_permissions")
+    .eq("id", studentId)
+    .maybeSingle();
+  if (studentError) throw new Error(pgErrorMessage(studentError, "تعذر تحميل الطالب."));
+  if (!student) throw new Error("الطالب غير موجود.");
+  if (student.batch_id) {
+    if (!(await sbCanAccessBatchInternal(admin, user, student.batch_id))) {
+      throw new Error("غير مصرح.");
+    }
+  } else if (user.role !== "OWNER") {
+    throw new Error("غير مصرح.");
+  }
+
+  let policy = normalizeStudentPermissionPolicy(undefined);
+  if (student.batch_id) {
+    const { data: batch } = await admin
+      .from("batches")
+      .select("student_permission_policy")
+      .eq("id", student.batch_id)
+      .maybeSingle();
+    policy = normalizeStudentPermissionPolicy(batch?.student_permission_policy as StudentPermissionPolicy);
+  } else {
+    const { data: form } = await admin
+      .from("booking_forms")
+      .select("student_permission_policy")
+      .eq("slug", INDIVIDUAL_FORM_SLUG)
+      .maybeSingle();
+    policy = normalizeStudentPermissionPolicy(form?.student_permission_policy as StudentPermissionPolicy);
+  }
+
+  if (user.role === "REPRESENTATIVE") {
+    if (!representativeMayConfigurePermissions(policy)) {
+      throw new Error("المالك لم يسمح للممثل بتعديل صلاحيات الطلاب.");
+    }
+  }
+
+  const next =
+    override == null
+      ? null
+      : user.role === "OWNER"
+        ? normalizeStudentPermissions(override)
+        : clampOverrideToCeiling(policy.defaults, override);
+
+  const { error } = await admin
+    .from("students")
+    .update({ customization_permissions: next, updated_at: new Date().toISOString() })
+    .eq("id", studentId);
+  if (error) throw new Error(pgErrorMessage(error, "تعذر حفظ صلاحيات الطالب."));
 }
 
 export async function sbGetUniformTemplateDefinition(): Promise<FormDefinition> {

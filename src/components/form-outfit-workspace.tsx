@@ -5,25 +5,20 @@ import { useRouter } from "next/navigation";
 import { GripVertical } from "lucide-react";
 import {
   addFormOptionAction,
+  deleteFormProductImageAction,
   deleteOutfitImageAction,
   reorderFormOptionsAction,
   saveFormProductAssignmentAction,
   updateFormFieldMetaAction,
   updateFormOptionAction,
-  updateFormOutfitConfigAction,
-  uploadOutfitImageAction
+  updateFormOutfitConfigAction
 } from "@/app/actions";
+import { uploadAdminImage } from "@/lib/admin-image-upload-client";
+import { ImagePreviewThumb } from "@/components/image-preview";
 import { Button, Card, FieldLabel, LinkButton, TextArea, TextInput, VisibilityBadge } from "@/components/ui";
 import { OUTFIT_PRESETS, PRODUCT_MODEL_KEYS } from "@/lib/form-config";
-import {
-  CORE_PRODUCT_IDS,
-  CORE_PRODUCT_LABELS,
-  constrainToEnabledProducts,
-  formEnabledCoreProducts,
-  normalizeCatalogAssignment,
-  reconcileOutfitConfigAgainstForm,
-  sanitizeOutfitConfig
-} from "@/lib/outfit-architecture";
+import { CORE_PRODUCT_IDS, CORE_PRODUCT_LABELS, constrainToEnabledProducts, formEnabledCoreProducts, normalizeCatalogAssignment, reconcileOutfitConfigAgainstForm, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { formProductDisplayImage, patchFormProductImage, scopedProductImageForOutfit } from "@/lib/form-image-scope";
 import type {
   CoreProductId,
   FormDefinition,
@@ -61,6 +56,10 @@ export function FormOutfitWorkspace({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | CoreProductId>("all");
   const enabledProducts = useMemo(() => formEnabledCoreProducts(definition), [definition]);
+  const liveDefinition = useMemo(
+    (): FormDefinition => ({ ...definition, outfitConfig: config }),
+    [definition, config]
+  );
 
   const fieldsByKey = useMemo(() => {
     const map = new Map<string, FormField>();
@@ -76,7 +75,8 @@ export function FormOutfitWorkspace({
       sanitizeOutfitConfig(
         {
           ...next,
-          catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments
+          catalogAssignments: sanitizeOutfitConfig(definition.outfitConfig).catalogAssignments,
+          formProductImages: next.formProductImages ?? definition.outfitConfig?.formProductImages
         },
         enabledProducts
       )
@@ -132,8 +132,8 @@ export function FormOutfitWorkspace({
   return (
     <div className="grid gap-4">
       {(focus === "outfits" || focus === "products") ? (
-        <div className="sticky top-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-[var(--paper)]/95 px-3 py-2 shadow-sm">
-          <p className="text-sm font-bold text-[var(--olive-dark)]">
+        <div className="sticky top-3 z-20 pointer-events-none flex flex-wrap items-center justify-between gap-2 rounded-[1.2rem] border border-[var(--border)] bg-[var(--paper)]/95 px-3 py-2 shadow-sm">
+          <p className="pointer-events-auto text-sm font-bold text-[var(--olive-dark)]">
             {dirty
               ? "● توجد تغييرات غير محفوظة"
               : saved
@@ -143,7 +143,7 @@ export function FormOutfitWorkspace({
                   : "ترتيب منتجات الطالب"}
           </p>
           {canManage ? (
-            <Button type="button" size="sm" disabled={pending || !dirty} onClick={saveConfig}>
+            <Button type="button" size="sm" className="pointer-events-auto" disabled={pending || !dirty} onClick={saveConfig}>
               حفظ التغييرات
             </Button>
           ) : null}
@@ -182,7 +182,7 @@ export function FormOutfitWorkspace({
                   outfit={outfit}
                   enabledProducts={enabledProducts}
                   fieldsByKey={fieldsByKey}
-                  definition={definition}
+                  definition={liveDefinition}
                   disabled={!canManage || pending}
                   onChange={(patch) => {
                     const fullOutfits = config.fullOutfits.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry));
@@ -360,11 +360,15 @@ export function FormOutfitWorkspace({
               canManage={canManage}
               pending={pending}
               formId={formId}
-              definition={definition}
+              definition={liveDefinition}
               expandCustomizations={focus === "customizations"}
               showModelEditor={focus === "products"}
               singleItemVisible={config.singleItemProducts.includes(product)}
               onRefresh={() => router.refresh()}
+              onFormProductImageChange={(next) => {
+                setConfig((current) => liveConfig(patchFormProductImage(current, product, next ?? null)));
+                router.refresh();
+              }}
             />
           ))}
         </>
@@ -379,6 +383,8 @@ function OutfitImageSlot({
   productId,
   label,
   image,
+  fallbackUrl,
+  fallbackHint,
   disabled,
   onSaved
 }: {
@@ -387,25 +393,31 @@ function OutfitImageSlot({
   productId?: CoreProductId;
   label: string;
   image?: OutfitProductImage;
+  fallbackUrl?: string;
+  fallbackHint?: string;
   disabled: boolean;
   onSaved: (next?: OutfitProductImage) => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string>();
   const fileRef = useRef<HTMLInputElement>(null);
-  const preview = image?.imageUrl;
-  const hasImage = Boolean(preview);
+  const hasOverride = Boolean(image?.imageUrl || image?.imagePath);
+  const preview = image?.imageUrl || fallbackUrl;
+  const showingFallback = Boolean(!hasOverride && fallbackUrl);
 
   function upload(file: File | undefined) {
     if (!file) return;
     startTransition(async () => {
       try {
-        const body = new FormData();
-        body.set("formId", formId);
-        body.set("outfitId", outfitId);
-        if (productId) body.set("productId", productId);
-        body.set("file", file);
-        const result = await uploadOutfitImageAction(body);
+        const result = await uploadAdminImage(
+          "outfit",
+          {
+            formId,
+            outfitId,
+            ...(productId ? { productId } : {})
+          },
+          file
+        );
         if (!result.success) {
           setMessage(result.error);
           return;
@@ -427,7 +439,7 @@ function OutfitImageSlot({
           return;
         }
         onSaved(undefined);
-        setMessage("تم حذف الصورة.");
+        setMessage("تم حذف صورة هذا الزي.");
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "تعذر حذف الصورة.");
       }
@@ -438,8 +450,13 @@ function OutfitImageSlot({
     <div className="grid gap-2 rounded-xl border border-[var(--border)] bg-white/80 p-2 sm:grid-cols-[4.5rem_1fr] sm:items-center">
       <div className="overflow-hidden rounded-lg border border-dashed border-[var(--border)] bg-[#3f472d08]">
         {preview ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt={label} className="aspect-square w-full object-cover" />
+          <ImagePreviewThumb
+            src={preview}
+            alt={label}
+            sizes="72px"
+            aspectClassName="aspect-square"
+            className="rounded-lg border-0"
+          />
         ) : (
           <div className="grid aspect-square place-items-center px-1 text-center text-[10px] font-bold leading-4 text-[var(--muted)]">
             بدون صورة
@@ -448,6 +465,11 @@ function OutfitImageSlot({
       </div>
       <div className="min-w-0">
         <p className="text-xs font-black text-[var(--olive-dark)]">{label}</p>
+        {showingFallback && fallbackHint ? (
+          <p className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">{fallbackHint}</p>
+        ) : hasOverride && productId ? (
+          <p className="mt-0.5 text-[11px] font-bold text-[var(--olive)]">خاصة بهذا الزي فقط</p>
+        ) : null}
         <input
           ref={fileRef}
           type="file"
@@ -461,11 +483,117 @@ function OutfitImageSlot({
         {!disabled ? (
           <div className="mt-1 flex flex-wrap gap-1">
             <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => fileRef.current?.click()}>
-              {hasImage ? "تغيير الصورة" : "رفع صورة"}
+              {hasOverride ? "تغيير الصورة" : "رفع صورة لهذا الزي"}
             </Button>
-            {hasImage ? (
+            {hasOverride ? (
               <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={remove}>
-                حذف الصورة
+                حذف صورة الزي
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {message ? <p className="mt-1 text-[11px] font-bold text-[var(--olive)]">{message}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function FormProductImageSlot({
+  formId,
+  productId,
+  label,
+  image,
+  fallbackUrl,
+  disabled,
+  onSaved
+}: {
+  formId: string;
+  productId: CoreProductId;
+  label: string;
+  image?: OutfitProductImage;
+  fallbackUrl?: string;
+  disabled: boolean;
+  onSaved: (next?: OutfitProductImage) => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string>();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const hasOverride = Boolean(image?.imageUrl || image?.imagePath);
+  const preview = image?.imageUrl || fallbackUrl;
+
+  function upload(file: File | undefined) {
+    if (!file) return;
+    startTransition(async () => {
+      try {
+        const result = await uploadAdminImage("form-product", { formId, productId }, file);
+        if (!result.success) {
+          setMessage(result.error);
+          return;
+        }
+        onSaved({ imagePath: result.data?.imagePath, imageUrl: result.data?.imageUrl });
+        setMessage("تم رفع صورة منتج النموذج.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
+      }
+    });
+  }
+
+  function remove() {
+    startTransition(async () => {
+      try {
+        const result = await deleteFormProductImageAction(formId, productId);
+        if (!result.success) {
+          setMessage(result.error);
+          return;
+        }
+        onSaved(undefined);
+        setMessage("تم حذف صورة منتج النموذج.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تعذر حذف الصورة.");
+      }
+    });
+  }
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-[var(--border)] bg-white/80 p-2 sm:grid-cols-[4.5rem_1fr] sm:items-center">
+      <div className="overflow-hidden rounded-lg border border-dashed border-[var(--border)] bg-[#3f472d08]">
+        {preview ? (
+          <ImagePreviewThumb
+            src={preview}
+            alt={label}
+            sizes="72px"
+            aspectClassName="aspect-square"
+            className="rounded-lg border-0"
+          />
+        ) : (
+          <div className="grid aspect-square place-items-center px-1 text-center text-[10px] font-bold leading-4 text-[var(--muted)]">
+            بدون صورة
+          </div>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-black text-[var(--olive-dark)]">{label}</p>
+        <p className="mt-0.5 text-[11px] font-bold text-[var(--muted)]">
+          {hasOverride ? "صورة منتج النموذج (لا تغيّر صور الأزياء)" : "الافتراضي للأزياء إن لم تُرفع صورة خاصة بالزي"}
+        </p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            upload(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        {!disabled ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => fileRef.current?.click()}>
+              {hasOverride ? "تغيير صورة المنتج" : "رفع صورة المنتج"}
+            </Button>
+            {hasOverride ? (
+              <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={remove}>
+                حذف صورة المنتج
               </Button>
             ) : null}
           </div>
@@ -592,7 +720,7 @@ function OutfitEditor({
           const checked = selectedProducts.includes(product);
           const modelField = fieldsByKey.get(PRODUCT_MODEL_KEYS[product]);
           const models = (modelField?.options ?? []).filter((option) => option.enabled !== false);
-          const preview = models.find((option) => option.imageUrl)?.imageUrl;
+          const preview = scopedProductImageForOutfit(definition, outfit, product);
           return (
             <label
               key={product}
@@ -617,7 +745,7 @@ function OutfitEditor({
                 <span className="flex items-center gap-2">
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                    <img src={preview} alt="" className="h-8 w-8 rounded-lg object-contain" />
                   ) : (
                     <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#3f472d12] text-[10px] text-[var(--muted)]">—</span>
                   )}
@@ -678,8 +806,10 @@ function OutfitEditor({
               formId={formId}
               outfitId={outfit.id}
               productId={productId}
-              label={`صورة ${CORE_PRODUCT_LABELS[productId]}`}
+              label={`صورة ${CORE_PRODUCT_LABELS[productId]} داخل هذا الزي`}
               image={outfit.productImages?.[productId]}
+              fallbackUrl={formProductDisplayImage(definition, productId)}
+              fallbackHint="يظهر حالياً صورة منتج النموذج. ارفع صورة خاصة بهذا الزي دون تغيير المنتجات."
               disabled={disabled}
               onSaved={(next) => {
                 const productImages = { ...(outfit.productImages ?? {}) };
@@ -779,7 +909,8 @@ function ProductConfigCard({
   expandCustomizations,
   showModelEditor,
   singleItemVisible,
-  onRefresh
+  onRefresh,
+  onFormProductImageChange
 }: {
   product: CoreProductId;
   field?: FormField;
@@ -792,6 +923,7 @@ function ProductConfigCard({
   showModelEditor: boolean;
   singleItemVisible: boolean;
   onRefresh: () => void;
+  onFormProductImageChange?: (next?: OutfitProductImage) => void;
 }) {
   const [open, setOpen] = useState(expandCustomizations);
   const [modelName, setModelName] = useState("");
@@ -896,6 +1028,27 @@ function ProductConfigCard({
           قياسات الروب عامة: الطول (سم) ومقاس اللبس تظهر تلقائياً كلما اختير الروب.
         </p>
       ) : null}
+
+      <div className="mt-4">
+        <FormProductImageSlot
+          formId={formId}
+          productId={product}
+          label={`صورة ${CORE_PRODUCT_LABELS[product]} في منتجات النموذج`}
+          image={definition.outfitConfig?.formProductImages?.[product]}
+          fallbackUrl={formProductDisplayImage(
+            {
+              ...definition,
+              outfitConfig: { ...sanitizeOutfitConfig(definition.outfitConfig), formProductImages: undefined }
+            },
+            product
+          )}
+          disabled={!canManage || pending}
+          onSaved={(next) => {
+            onFormProductImageChange?.(next);
+            onRefresh();
+          }}
+        />
+      </div>
 
       <div className="mt-4">
         <h3 className="text-sm font-black text-[var(--olive-dark)]">الموديلات</h3>

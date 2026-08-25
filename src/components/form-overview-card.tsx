@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { duplicateFormAction, setFormStatusAction, archiveFormAction } from "@/app/actions";
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
-import { CopyLinkButton } from "@/components/copy-link-button";
+import { BookingLinkCard } from "@/components/booking-link-card";
 import { Badge, Button, LinkButton } from "@/components/ui";
 import { formStatusLabels } from "@/lib/labels";
 import { formatArabicDate } from "@/lib/utils";
@@ -41,7 +41,7 @@ export function FormOverviewCard({
         <div className="flex min-w-0 justify-between gap-3">
           <dt className="shrink-0 text-[var(--muted)]">الرابط</dt>
           <dd className="ltr min-w-0 truncate text-left font-bold text-[var(--olive-dark)]" dir="ltr">
-            {publicPath}
+            {form.status === "published" ? publicPath : "—"}
           </dd>
         </div>
         <div className="flex justify-between gap-3">
@@ -105,7 +105,10 @@ export function FormOverviewCard({
             />
           </>
         ) : null}
-        <CopyLinkButton value={publicUrl} />
+      </div>
+
+      <div className="relative z-10 mt-4">
+        <BookingLinkCard publicUrl={publicUrl} status={form.status} />
       </div>
     </article>
   );

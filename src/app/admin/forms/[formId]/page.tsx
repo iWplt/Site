@@ -3,7 +3,7 @@ import { duplicateFormAction, setFormStatusAction, archiveFormAction } from "@/a
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { BatchFormRelationshipCard } from "@/components/batch-form-relationship";
 import { BookingWorkspaceNav, formWorkspaceItems } from "@/components/booking-workspace-nav";
-import { CopyLinkButton } from "@/components/copy-link-button";
+import { BookingLinkCard } from "@/components/booking-link-card";
 import { FormCopyPanel } from "@/components/form-copy-panel";
 import { FormConfigWarnings } from "@/components/form-config-warnings";
 import { FormOutfitWorkspace } from "@/components/form-outfit-workspace";
@@ -13,6 +13,7 @@ import { FormProductsPanel } from "@/components/form-products-panel";
 import { FormTabsNav } from "@/components/form-tabs-nav";
 import { FORM_TABS, resolveFormTab, type FormTabId } from "@/lib/form-tabs";
 import { FormUploadSettings } from "@/components/form-upload-settings";
+import { FormPermissionPolicyPanel } from "@/components/permission-policy-panels";
 import { Badge, Button, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getAdminForm, getBatch, listFormSummaries } from "@/lib/data";
@@ -92,7 +93,6 @@ export default async function FormManagePage({
           <LinkButton href={previewHref} target="_blank" rel="noreferrer">
             👁️ معاينة كطالب
           </LinkButton>
-          <CopyLinkButton value={publicUrl} />
         </div>
         {canManage ? (
           <form
@@ -107,6 +107,12 @@ export default async function FormManagePage({
           </form>
         ) : null}
       </div>
+
+      <BookingLinkCard publicUrl={publicUrl} status={form.status} />
+
+      {canManage && form.type === "INDIVIDUAL" ? (
+        <FormPermissionPolicyPanel formId={form.id} initial={form.student_permission_policy} />
+      ) : null}
 
       <FormTabsNav formId={form.id} active={tab} tabs={[...FORM_TABS]} />
       {tab !== "booking" ? <FormConfigWarnings definition={form.definition} /> : null}

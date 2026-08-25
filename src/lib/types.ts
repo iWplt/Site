@@ -1,3 +1,14 @@
+import type {
+  StudentPermissionOverride,
+  StudentPermissionPolicy
+} from "@/lib/student-permissions";
+
+export type {
+  StudentCustomizationPermissions,
+  StudentPermissionOverride,
+  StudentPermissionPolicy
+} from "@/lib/student-permissions";
+
 export type Role = "OWNER" | "REPRESENTATIVE";
 
 export type AppUser = {
@@ -87,6 +98,8 @@ export type OutfitConfig = {
   singleItemProducts: CoreProductId[];
   productOrder: CoreProductId[];
   catalogAssignments?: Record<string, CatalogFormAssignment>;
+  /** Form-level product images (default/fallback). Independent from catalog and outfit membership images. */
+  formProductImages?: Partial<Record<CoreProductId, OutfitProductImage>>;
 };
 
 export type FormOption = {
@@ -207,6 +220,8 @@ export type Batch = {
   description?: string;
   representative_name?: string;
   representative_id?: string;
+  /** Owner policy: defaults/ceiling + whether reps may configure student overrides. */
+  student_permission_policy?: StudentPermissionPolicy;
   created_at: string;
   updated_at: string;
 };
@@ -218,6 +233,8 @@ export type Student = {
   phone?: string;
   address?: string;
   notes?: string;
+  /** Per-student override of customization permissions (within Owner ceiling for reps). */
+  customization_permissions?: StudentPermissionOverride | null;
   created_at: string;
   updated_at: string;
 };
@@ -243,6 +260,8 @@ export type BookingFormRecord = {
   opening_date?: string;
   closing_date?: string;
   definition: FormDefinition;
+  /** Used for individual forms (and as fallback); batch forms prefer batch policy. */
+  student_permission_policy?: StudentPermissionPolicy;
   created_at?: string;
   updated_at?: string;
 };

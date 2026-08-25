@@ -1,0 +1,71 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "graduation",
+	"compatibility_date": "2026-08-25",
+	"compatibility_flags": [
+		// Node.js APIs required by Next.js / OpenNext on Workers
+		"nodejs_compat",
+		// Allow fetching public URLs from the Worker
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Self-reference for OpenNext caching / revalidation fan-out
+			// see https://opennext.js.org/cloudflare/caching
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "graduation"
+		}
+	],
+	"images": {
+		// Cloudflare Images binding used by OpenNext image optimization
+		// see https://opennext.js.org/cloudflare/howtos/image
+		"binding": "IMAGES"
+	},
+	// OpenNext incremental cache (R2 only — app uploads stay on Supabase Storage)
+	"r2_buckets": [
+		{
+			"binding": "NEXT_INC_CACHE_R2_BUCKET",
+			"bucket_name": "warka-next-cache"
+		}
+	],
+	// OpenNext on-demand revalidation tag store (revalidatePath / revalidateTag)
+	"d1_databases": [
+		{
+			"binding": "NEXT_TAG_CACHE_D1",
+			"database_name": "warka-next-tag-cache",
+			"database_id": "9979234a-462e-40f5-bf2b-27274c3caa29"
+		}
+	],
+	// OpenNext revalidation queue
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "NEXT_CACHE_DO_QUEUE",
+				"class_name": "DOQueueHandler"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["DOQueueHandler"]
+		}
+	],
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	// Non-secret production defaults only.
+	// Secrets MUST be set with: npx wrangler secret put <NAME>
+	// Never put SUPABASE_SERVICE_ROLE_KEY, ACCESS_CODE_*, BOOKING_SESSION_SECRET,
+	// or NEXT_PUBLIC_SUPABASE_* here (those go through `wrangler secret put`).
+	"vars": {
+		"WARKA_RUNTIME_ENV": "production",
+		"NEXT_PUBLIC_APP_URL": "https://graduation.warka.workers.dev"
+	}
+}

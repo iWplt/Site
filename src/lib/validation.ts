@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { unauthorizedPermissionErrors } from "@/lib/apply-student-permissions";
 import { flattenFields } from "@/lib/form-definition";
 import { normalizeAccessCodeInput } from "@/lib/access-code-scope";
 import { choiceSelectionError, isMultiSelectField, normalizeChoiceAnswer } from "@/lib/form-selection";
@@ -10,6 +11,7 @@ import {
   resolveOutfitAnswers
 } from "@/lib/outfit-architecture";
 import { requiredUploadError } from "@/lib/required-upload";
+import type { StudentCustomizationPermissions } from "@/lib/student-permissions";
 import type { FormDefinition } from "@/lib/types";
 
 export const phoneSchema = z
@@ -41,14 +43,18 @@ export const submissionSchema = z.object({
 export function validateDynamicAnswers(
   definition: FormDefinition,
   answers: Record<string, unknown>,
-  files?: Record<string, unknown[]>
+  files?: Record<string, unknown[]>,
+  permissions?: StudentCustomizationPermissions
 ) {
   const resolved = resolveOutfitAnswers(definition, answers);
-  const errors: Record<string, string> = {};
+  const errors: Record<string, string> = permissions
+    ? unauthorizedPermissionErrors(definition, permissions, resolved, files)
+    : {};
 
   for (const field of flattenFields(definition.sections)) {
     if (field.type === "info" || field.type === "section") continue;
     if (!fieldVisibleForBookingContext(field, definition, resolved)) continue;
+    if (errors[field.key]) continue;
 
     if (["image_upload", "file_upload"].includes(field.type)) {
       const uploadError = requiredUploadError(

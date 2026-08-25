@@ -117,7 +117,9 @@ export function sanitizeOutfitConfig(raw?: OutfitConfig | null, enabledProducts?
     singleItemEnabled: raw?.singleItemEnabled !== false,
     singleItemProducts: singleItemProducts.length ? singleItemProducts : [...enabled],
     productOrder,
-    catalogAssignments: sanitizeCatalogAssignments(raw?.catalogAssignments)
+    catalogAssignments: sanitizeCatalogAssignments(raw?.catalogAssignments),
+    // Keep Form Product images even when a core product is temporarily disabled.
+    formProductImages: sanitizeProductImages(raw?.formProductImages)
   };
 }
 
@@ -344,12 +346,27 @@ export function fieldVisibleForBookingContext(
   return !hidden.includes(field.key);
 }
 
+const ARCHITECTURE_ANSWER_KEYS = new Set([
+  "booking_type",
+  "full_outfit_id",
+  "selected_products",
+  "student_name",
+  "phone",
+  "address"
+]);
+
 function pruneInvalidChoiceAnswers(definition: FormDefinition, answers: Record<string, unknown>) {
   const next = { ...answers };
   for (const section of definition.sections) {
     for (const field of section.fields) {
+      if (ARCHITECTURE_ANSWER_KEYS.has(field.key)) {
+        if (!["radio", "select", "image_choice", "checkbox"].includes(field.type)) continue;
+        if (!fieldVisibleForBookingContext(field, definition, next)) continue;
+      } else if (!fieldVisibleForBookingContext(field, definition, next)) {
+        delete next[field.key];
+        continue;
+      }
       if (!["radio", "select", "image_choice", "checkbox"].includes(field.type)) continue;
-      if (!fieldVisibleForBookingContext(field, definition, next)) continue;
       const value = next[field.key];
       if (isBlankValue(value)) continue;
       const allowed = optionValuesForBookingContext(field, definition, next);
@@ -406,6 +423,7 @@ export function resolveOutfitAnswers(definition: FormDefinition, answers: Record
       config.singleItemProducts.includes(id as CoreProductId)
     );
     next.selected_products = selected;
+    delete next.full_outfit_id;
   }
 
   return pruneInvalidChoiceAnswers(definition, next);
@@ -485,11 +503,14 @@ function ensureBookingFields(sections: FormSection[], config: OutfitConfig) {
   upsertField(booking, {
     id: "full_outfit_id",
     key: "full_outfit_id",
-    label: "الزي الكامل",
+    label: "اختيار الزي",
     type: outfits.length > 1 || hasOutfitImages ? (hasOutfitImages ? "image_choice" : "radio") : "read_only",
     required: outfits.length > 1,
     defaultValue: outfits[0]?.id,
-    description: "المنتجات مشمولة تلقائياً حسب إعداد هذا الزي. خصّص كل قطعة في الخطوات التالية دون إضافة أو حذف أو استبدال منتجات.",
+    description:
+      outfits.length > 1
+        ? "اختر زياً واحداً. المنتجات مشمولة تلقائياً حسب هذا الزي ولا يمكن إضافة أو حذف أو استبدال القطع."
+        : "المنتجات مشمولة تلقائياً حسب إعداد هذا الزي. خصّص كل قطعة في الخطوات التالية دون إضافة أو حذف أو استبدال منتجات.",
     showOptionImages: hasOutfitImages,
     options: outfits.map((outfit) => ({
       id: outfit.id,

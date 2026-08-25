@@ -1,4 +1,4 @@
-import { INDIVIDUAL_FORM_SLUG } from "@/lib/form-uniform";
+import { INDIVIDUAL_FORM_SLUG } from "./form-uniform.ts";
 
 export function publicFormPath(slug: string) {
   const safe = slug.trim();

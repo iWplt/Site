@@ -27,12 +27,13 @@ import { accessCodeSchema, submissionSchema, validateDynamicAnswers } from "@/li
 import { defaultWarkaFormDefinition } from "@/lib/form-definition";
 import { mergeCatalogIntoDefinition, filterAvailableProducts } from "@/lib/product-catalog";
 import { applyOutfitArchitecture, CORE_PRODUCT_IDS, normalizeCatalogAssignment, resolveOutfitAnswers, sanitizeOutfitConfig } from "@/lib/outfit-architecture";
+import { patchFormProductImage, patchOutfitScopedImage, preserveImageScopesOnConfigSave } from "@/lib/form-image-scope";
 import { applyCopiedFormConfig, catalogProductIdsFromDefinition, type CopyFormSlices } from "@/lib/form-config";
 import { getAdminForm } from "@/lib/data";
 import { normalizeFormCustomizationGrouping } from "@/lib/form-customization";
 import { assertPersistenceAllowed, type PersistenceMode } from "@/lib/persistence";
 import { actionFail, actionFailFromUnknown, actionOk, logFormOptionOp, type ActionResult } from "@/lib/action-result";
-import { deleteOptionImage, deleteOutfitAssetFile, storeOptionImage, storeOutfitAsset } from "@/lib/storage/uploads";
+import { deleteOptionImage, deleteOutfitAssetFile, storeFormProductAsset, storeOptionImage, storeOutfitAsset } from "@/lib/storage/uploads";
 import {
   sbAssertBatchAccess,
   sbAssignRepresentativeBatches,
@@ -61,6 +62,7 @@ import {
   sbUpdateFormOption,
   sbUpdateFormOutfitConfig,
   sbPatchOutfitImage,
+  sbPatchFormProductImage,
   sbPatchFormCatalogAssignment,
   sbAddFormOption,
   sbReplaceFormDefinition,
@@ -69,11 +71,19 @@ import {
   sbUpdateFormUploadSettings,
   sbUpdateOrderStatus,
   sbUpdateStudent,
+  sbUpdateBatchPermissionPolicy,
+  sbUpdateFormPermissionPolicy,
+  sbUpdateStudentCustomizationPermissions,
   sbVerifyAccessCode,
   sbConfirmPickupDelivery
 } from "@/lib/store/supabase-db";
+import {
+  normalizeStudentPermissionPolicy,
+  type StudentPermissionOverride,
+  type StudentPermissionPolicy
+} from "@/lib/student-permissions";
+import { ingestAdminImageFile } from "@/lib/ingest-admin-image";
 import { parseUniformFormData } from "@/lib/form-uniform";
-import { OPTION_IMAGE_MIMES, sniffAllowedMime } from "@/lib/upload-security";
 import {
   ACCESS_CODE_RATE_LIMIT_MESSAGE,
   clientRateBucket,
@@ -83,8 +93,6 @@ import type { AccessCodeStatus, Batch, BatchStatus, CatalogFormAssignment, CoreP
 import { safeSlug } from "@/lib/utils";
 
 const bookingCookie = "warka_booking_session";
-
-const MAX_OPTION_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function revalidateAdmin(batchId?: string) {
   revalidatePath("/admin");
@@ -1152,15 +1160,16 @@ export async function updateFormFieldMetaAction(
 
 export async function updateFormOutfitConfigAction(formId: string, raw: OutfitConfig) {
   await requireUser(["OWNER"]);
-  const config = sanitizeOutfitConfig(raw);
+  const incoming = sanitizeOutfitConfig(raw);
   if (assertPersistenceAllowed() === "supabase") {
-    await sbUpdateFormOutfitConfig(formId, config);
+    await sbUpdateFormOutfitConfig(formId, incoming);
   } else {
     mutateDb((db) => {
       const form = db.forms.find((entry) => entry.id === formId);
       if (!form) throw new Error("النموذج غير موجود.");
-      form.definition = { ...form.definition, outfitConfig: config };
-      audit(db, "FORM_OUTFIT_CONFIG_UPDATED", "booking_form", formId, { label: "owner" }, { config });
+      const existing = sanitizeOutfitConfig(form.definition.outfitConfig);
+      form.definition = { ...form.definition, outfitConfig: preserveImageScopesOnConfigSave(existing, incoming) };
+      audit(db, "FORM_OUTFIT_CONFIG_UPDATED", "booking_form", formId, { label: "owner" }, { config: form.definition.outfitConfig });
     });
   }
   revalidateAdmin();
@@ -1478,32 +1487,17 @@ export async function uploadFormOptionImageAction(formData: FormData): Promise<
   const optionId = String(formData.get("optionId") ?? "").trim();
   const file = formData.get("file");
 
-  if (!formId || !fieldKey || !optionId || !(file instanceof File)) {
+  if (!formId || !fieldKey || !optionId) {
     return actionFail("بيانات الصورة غير مكتملة.", "validation");
   }
-  if (file.size > MAX_OPTION_IMAGE_BYTES) {
-    return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
-  }
-  if (file.size <= 0) {
-    return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
+  const ingested = await ingestAdminImageFile(file);
+  if (!ingested.success || !ingested.data) {
+    return ingested.success ? actionFail("بيانات الصورة غير مكتملة.", "validation") : ingested;
   }
 
   try {
     const mode = assertPersistenceAllowed();
-    const buffer = Buffer.from(await file.arrayBuffer());
-    if (!buffer.byteLength) {
-      return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
-    }
-    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
-    if (!mimeType) {
-      return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
-    }
-
-    const stored = await storeOptionImage(formId, fieldKey, optionId, {
-      buffer,
-      mimeType,
-      originalName: file.name
-    });
+    const stored = await storeOptionImage(formId, fieldKey, optionId, ingested.data);
 
     if (!stored.imagePath) {
       return actionFail("تعذر حفظ مسار الصورة بعد الرفع.", "storage");
@@ -1601,22 +1595,29 @@ function patchLocalOutfitImage(
     const config = sanitizeOutfitConfig(form.definition.outfitConfig);
     form.definition = {
       ...form.definition,
-      outfitConfig: sanitizeOutfitConfig({
-        ...config,
-        fullOutfits: config.fullOutfits.map((outfit) => {
-          if (outfit.id !== outfitId) return outfit;
-          if (!productId) return { ...outfit, imagePath: image?.imagePath, imageUrl: image?.imageUrl };
-          const productImages = { ...(outfit.productImages ?? {}) };
-          if (!image) delete productImages[productId];
-          else productImages[productId] = image;
-          return { ...outfit, productImages: Object.keys(productImages).length ? productImages : undefined };
-        })
-      })
+      outfitConfig: patchOutfitScopedImage(config, outfitId, productId, image)
     };
     audit(db, productId ? "FORM_OUTFIT_PRODUCT_IMAGE_UPDATED" : "FORM_OUTFIT_IMAGE_UPDATED", "booking_form", formId, { label: "owner" }, {
       outfitId,
       productId
     });
+  });
+}
+
+function patchLocalFormProductImage(
+  formId: string,
+  productId: CoreProductId,
+  image: { imagePath?: string; imageUrl?: string } | null
+) {
+  mutateDb((db) => {
+    const form = db.forms.find((entry) => entry.id === formId);
+    if (!form) throw new Error("النموذج غير موجود.");
+    const config = sanitizeOutfitConfig(form.definition.outfitConfig);
+    form.definition = {
+      ...form.definition,
+      outfitConfig: patchFormProductImage(config, productId, image)
+    };
+    audit(db, "FORM_PRODUCT_IMAGE_UPDATED", "booking_form", formId, { label: "owner" }, { productId });
   });
 }
 
@@ -1633,19 +1634,13 @@ export async function uploadOutfitImageAction(formData: FormData): Promise<
   const productRaw = String(formData.get("productId") ?? "").trim();
   const productId = CORE_PRODUCT_IDS.includes(productRaw as CoreProductId) ? (productRaw as CoreProductId) : undefined;
   const file = formData.get("file");
-  if (!formId || !outfitId || !(file instanceof File)) return actionFail("بيانات الصورة غير مكتملة.", "validation");
-  if (file.size > MAX_OPTION_IMAGE_BYTES) return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
-  if (file.size <= 0) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
+  if (!formId || !outfitId) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  const ingested = await ingestAdminImageFile(file);
+  if (!ingested.success || !ingested.data) {
+    return ingested.success ? actionFail("بيانات الصورة غير مكتملة.", "validation") : ingested;
+  }
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    if (!buffer.byteLength) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
-    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
-    if (!mimeType) return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
-    const stored = await storeOutfitAsset(formId, outfitId, productId, {
-      buffer,
-      mimeType,
-      originalName: file.name
-    });
+    const stored = await storeOutfitAsset(formId, outfitId, productId, ingested.data);
     if (!stored.imagePath) return actionFail("تعذر حفظ مسار الصورة بعد الرفع.", "storage");
     if (assertPersistenceAllowed() === "supabase") {
       await sbPatchOutfitImage(formId, outfitId, productId, stored);
@@ -1696,6 +1691,81 @@ export async function deleteOutfitImageAction(
       const outfit = sanitizeOutfitConfig(form?.definition.outfitConfig).fullOutfits.find((entry) => entry.id === outfitId);
       previousPath = productId ? outfit?.productImages?.[productId]?.imagePath : outfit?.imagePath;
       patchLocalOutfitImage(formId, outfitId, productId, null);
+    }
+    await deleteOutfitAssetFile(previousPath);
+    try {
+      revalidateAdmin();
+    } catch {
+      /* committed */
+    }
+    return actionOk();
+  } catch (error) {
+    return actionFailFromUnknown(error, "تعذر حذف الصورة.");
+  }
+}
+
+export async function uploadFormProductImageAction(formData: FormData): Promise<
+  ActionResult<{ imagePath: string; imageUrl?: string }>
+> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
+  const formId = String(formData.get("formId") ?? "").trim();
+  const productRaw = String(formData.get("productId") ?? "").trim();
+  const productId = CORE_PRODUCT_IDS.includes(productRaw as CoreProductId) ? (productRaw as CoreProductId) : undefined;
+  const file = formData.get("file");
+  if (!formId || !productId) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  const ingested = await ingestAdminImageFile(file);
+  if (!ingested.success || !ingested.data) {
+    return ingested.success ? actionFail("بيانات الصورة غير مكتملة.", "validation") : ingested;
+  }
+  try {
+    const stored = await storeFormProductAsset(formId, productId, ingested.data);
+    if (!stored.imagePath) return actionFail("تعذر حفظ مسار الصورة بعد الرفع.", "storage");
+    if (assertPersistenceAllowed() === "supabase") {
+      await sbPatchFormProductImage(formId, productId, stored);
+    } else {
+      patchLocalFormProductImage(formId, productId, stored);
+    }
+    try {
+      revalidateAdmin();
+    } catch {
+      /* committed */
+    }
+    logFormOptionOp("uploadFormProductImage.ok", { formId, productId });
+    return actionOk({ imagePath: stored.imagePath, imageUrl: stored.imageUrl });
+  } catch (error) {
+    const failed = actionFailFromUnknown(error, "تعذر رفع الصورة.");
+    logFormOptionOp("uploadFormProductImage.fail", {
+      formId,
+      productId,
+      code: failed.code,
+      error: failed.error
+    });
+    return failed;
+  }
+}
+
+export async function deleteFormProductImageAction(formId: string, productId: CoreProductId): Promise<ActionResult> {
+  try {
+    await requireUser(["OWNER"]);
+  } catch {
+    return actionFail("غير مصرح.", "unauthorized");
+  }
+  if (!formId || !productId) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  try {
+    let previousPath: string | undefined;
+    if (assertPersistenceAllowed() === "supabase") {
+      const definition = await sbGetFormDefinition(formId);
+      previousPath = sanitizeOutfitConfig(definition.outfitConfig).formProductImages?.[productId]?.imagePath;
+      await sbPatchFormProductImage(formId, productId, null);
+    } else {
+      const db = readDb();
+      const form = db.forms.find((entry) => entry.id === formId);
+      previousPath = sanitizeOutfitConfig(form?.definition.outfitConfig).formProductImages?.[productId]?.imagePath;
+      patchLocalFormProductImage(formId, productId, null);
     }
     await deleteOutfitAssetFile(previousPath);
     try {
@@ -1912,16 +1982,14 @@ export async function uploadProductImageAction(formData: FormData): Promise<Acti
   }
   const productId = String(formData.get("product_id") ?? "").trim();
   const file = formData.get("file");
-  if (!productId || !(file instanceof File)) return actionFail("بيانات الصورة غير مكتملة.", "validation");
-  if (file.size > MAX_OPTION_IMAGE_BYTES) return actionFail("حجم الصورة يتجاوز 5 ميغابايت.", "validation");
-  if (file.size <= 0) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "validation");
+  if (!productId) return actionFail("بيانات الصورة غير مكتملة.", "validation");
+  const ingested = await ingestAdminImageFile(file);
+  if (!ingested.success || !ingested.data) {
+    return ingested.success ? actionFail("بيانات الصورة غير مكتملة.", "validation") : ingested;
+  }
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    if (!buffer.byteLength) return actionFail("ملف الصورة فارغ أو لم يصل إلى الخادم.", "storage");
-    const mimeType = sniffAllowedMime(buffer, OPTION_IMAGE_MIMES);
-    if (!mimeType) return actionFail("نوع الصورة غير مسموح، يرجى استخدام jpg أو png أو webp.", "validation");
     const { saveCatalogProductImage } = await import("@/lib/store/catalog-store");
-    await saveCatalogProductImage(productId, { buffer, mimeType, originalName: file.name });
+    await saveCatalogProductImage(productId, ingested.data);
     try {
       revalidateAdmin();
     } catch {
@@ -1930,6 +1998,53 @@ export async function uploadProductImageAction(formData: FormData): Promise<Acti
     return actionOk();
   } catch (error) {
     return actionFailFromUnknown(error, "تعذر رفع الصورة.");
+  }
+}
+
+export async function updateBatchPermissionPolicyAction(
+  batchId: string,
+  policy: StudentPermissionPolicy
+): Promise<ActionResult> {
+  const user = await requireUser(["OWNER"]);
+  try {
+    assertPersistenceAllowed();
+    await sbUpdateBatchPermissionPolicy(user, batchId, normalizeStudentPermissionPolicy(policy));
+    revalidateAdmin(batchId);
+    return actionOk();
+  } catch (error) {
+    return actionFailFromUnknown(error, "تعذر حفظ صلاحيات الدفعة.");
+  }
+}
+
+export async function updateFormPermissionPolicyAction(
+  formId: string,
+  policy: StudentPermissionPolicy
+): Promise<ActionResult> {
+  const user = await requireUser(["OWNER"]);
+  try {
+    assertPersistenceAllowed();
+    await sbUpdateFormPermissionPolicy(user, formId, normalizeStudentPermissionPolicy(policy));
+    revalidateAdmin();
+    revalidatePath(`/admin/forms/${formId}`);
+    return actionOk();
+  } catch (error) {
+    return actionFailFromUnknown(error, "تعذر حفظ صلاحيات النموذج.");
+  }
+}
+
+export async function updateStudentCustomizationPermissionsAction(
+  studentId: string,
+  override: StudentPermissionOverride | null
+): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    assertPersistenceAllowed();
+    await sbUpdateStudentCustomizationPermissions(user, studentId, override);
+    revalidateAdmin();
+    revalidatePath(`/admin/students/${studentId}`);
+    return actionOk();
+  } catch (error) {
+    return actionFailFromUnknown(error, "تعذر حفظ صلاحيات الطالب.");
   }
 }
 

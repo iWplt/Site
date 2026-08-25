@@ -5,7 +5,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2, LockKeyhole } from "lucide-r
 import dynamic from "next/dynamic";
 import { MultipleImageUpload, type UploadedFile } from "@/components/multiple-image-upload";
 import { PublicVisualHero, StudentGalleryStrip } from "@/components/public-visuals";
-import { OptimizedThumb } from "@/components/optimized-thumb";
+import { ImagePreviewThumb } from "@/components/image-preview";
 import { Button, Card, FieldLabel, TextArea, TextInput } from "@/components/ui";
 import { PUBLIC_VISUALS } from "@/lib/brand-assets";
 import { isUniformProductKey } from "@/lib/form-uniform";
@@ -17,10 +17,10 @@ import {
   isBlankValue,
   isSingleItemBooking,
   optionsForBookingContext,
-  outfitProductDisplayImage,
   resolveOutfitAnswers,
   resolveSelectedOutfit
 } from "@/lib/outfit-architecture";
+import { scopedProductImageForOutfit } from "@/lib/form-image-scope";
 import {
   choiceSelectionError,
   isMultiSelectField,
@@ -30,7 +30,7 @@ import {
 import { formatProductPrice } from "@/lib/product-catalog";
 import { buildLiveOrderSections } from "@/lib/order-view";
 import { requiredUploadError } from "@/lib/required-upload";
-import type { BookingFormRecord, FormField } from "@/lib/types";
+import type { BookingFormRecord, FormDefinition, FormField } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const OrderVisual = dynamic(
@@ -84,7 +84,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   const stepLabels = [...sections.map((section) => section.title), "مراجعة الطلب"];
   const activeSection = sections[activeStep];
   const activeProductImage = activeSection
-    ? outfitProductDisplayImage(resolveSelectedOutfit(form.definition, answers), activeSection.id)
+    ? scopedProductImageForOutfit(form.definition, resolveSelectedOutfit(form.definition, answers), activeSection.id)
     : undefined;
 
   useEffect(() => {
@@ -187,7 +187,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
   }
 
   return (
-    <div className="mx-auto max-w-3xl pb-32">
+    <div className="mx-auto max-w-3xl pb-40">
       {previewMode ? (
         <p className="mb-3 rounded-2xl bg-[#b59a631f] px-4 py-3 text-sm font-bold text-[#836528]">
           معاينة إدارية — لا يُرسل طلب حقيقي.
@@ -234,7 +234,7 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
           <h2 className="mt-1 text-2xl font-black text-[var(--olive-dark)]">{sections[activeStep].title}</h2>
           {sections[activeStep].description ? <p className="mt-2 text-base leading-8 text-[var(--muted)]">{sections[activeStep].description}</p> : null}
           {!singleItem && sections[activeStep].id === "booking" ? (
-            <AssignedOutfitProducts answers={answers} />
+            <AssignedOutfitProducts definition={form.definition} answers={answers} />
           ) : null}
           {!singleItem && CORE_PRODUCT_IDS.includes(sections[activeStep].id as (typeof CORE_PRODUCT_IDS)[number]) ? (
             <p className="mt-3 rounded-2xl bg-[#3f472d0d] px-4 py-3 text-sm font-bold leading-7 text-[var(--olive)]">
@@ -243,11 +243,16 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
           ) : null}
           {activeProductImage ? (
             <div className="mt-4 overflow-hidden rounded-[1.2rem] border border-[var(--border)] bg-white">
-              <OptimizedThumb src={activeProductImage} alt={sections[activeStep].title} sizes="(max-width: 768px) 100vw, 640px" eager />
+              <ImagePreviewThumb
+                src={activeProductImage}
+                alt={sections[activeStep].title}
+                sizes="(max-width: 768px) 100vw, 640px"
+                className="rounded-none border-0"
+              />
             </div>
           ) : null}
           <div className="mt-6 grid gap-6">
-            {visibleFields.map((field, fieldIndex) => (
+            {visibleFields.map((field) => (
               <FieldRenderer
                 key={field.id}
                 field={field}
@@ -256,7 +261,6 @@ export function BookingWizard({ form, studentName, studentPhone, studentAddress,
                 files={files[field.key] ?? []}
                 error={errors[field.key]}
                 productSelectionLocked={!singleItem && field.key === "selected_products"}
-                prioritizeImages={fieldIndex === 0}
                 onChange={(value) => setAnswer(field.key, value)}
                 onFiles={(next) => setFiles((current) => ({ ...current, [field.key]: next }))}
               />
@@ -323,14 +327,23 @@ function SuccessCard({ success }: { success: SuccessState }) {
   );
 }
 
-function AssignedOutfitProducts({ answers }: { answers: Record<string, unknown> }) {
+function AssignedOutfitProducts({
+  definition,
+  answers
+}: {
+  definition: FormDefinition;
+  answers: Record<string, unknown>;
+}) {
+  const outfit = resolveSelectedOutfit(definition, answers);
   const products = asStringList(answers.selected_products).filter((id): id is (typeof CORE_PRODUCT_IDS)[number] =>
     CORE_PRODUCT_IDS.includes(id as (typeof CORE_PRODUCT_IDS)[number])
   );
   if (!products.length) return null;
   return (
     <div className="mt-4 rounded-[1.2rem] border border-[var(--border)] bg-[#3f472d0d] p-4">
-      <p className="text-sm font-black text-[var(--olive-dark)]">المنتجات المشمولة في هذا الزي</p>
+      <p className="text-sm font-black text-[var(--olive-dark)]">
+        {outfit ? `المنتجات المشمولة في ${outfit.name}` : "المنتجات المشمولة في هذا الزي"}
+      </p>
       <p className="mt-1 text-sm leading-7 text-[var(--muted)]">
         هذه القطع ثابتة حسب إعداد الإدارة. يمكنك تخصيص كل قطعة لاحقاً، ولا يمكن إضافة أو حذف أو استبدال منتج.
       </p>
@@ -350,7 +363,6 @@ function FieldRenderer({
   files,
   error,
   productSelectionLocked = false,
-  prioritizeImages = false,
   onChange,
   onFiles
 }: {
@@ -360,7 +372,6 @@ function FieldRenderer({
   files: UploadedFile[];
   error?: string;
   productSelectionLocked?: boolean;
-  prioritizeImages?: boolean;
   onChange: (value: unknown) => void;
   onFiles: (files: UploadedFile[]) => void;
 }) {
@@ -440,7 +451,7 @@ function FieldRenderer({
                   onChange(result.value ?? []);
                 }}
                 className={cn(
-                  "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right",
+                  "flex items-start justify-between gap-3 rounded-[1.4rem] border p-4 text-right scroll-mb-28",
                   selected ? "border-[var(--olive)] bg-[#3f472d12] ring-4 ring-[#3f472d18]" : "border-[var(--border)] bg-white/70",
                   locked && "opacity-90"
                 )}
@@ -485,11 +496,11 @@ function FieldRenderer({
       {field.locked && ["radio", "select", "image_choice"].includes(field.type) ? (
         <div className="overflow-hidden rounded-[1.4rem] border border-[var(--olive)] bg-white">
           {lockedOption && (field.showOptionImages || field.type === "image_choice") && lockedOption.imageUrl ? (
-            <OptimizedThumb
+            <ImagePreviewThumb
               src={lockedOption.imageUrl}
               alt={lockedOption.imageAlt || lockedOption.label}
               sizes="(max-width: 768px) 100vw, 640px"
-              eager={prioritizeImages}
+              className="rounded-none border-0"
             />
           ) : null}
           <div className="p-4">
@@ -519,9 +530,9 @@ function FieldRenderer({
           aria-multiselectable={multiSelect || undefined}
         >
           {choiceOptions
-            .flatMap((option, optionIndex) => {
+            .flatMap((option) => {
               const optionChildren = (option.children?.length ? option.children : [option]).filter((child) => child.enabled !== false);
-              return optionChildren.map((child, childIndex) => {
+              return optionChildren.map((child) => {
                 const label = child.id === option.id ? child.label : `${option.label} - ${child.label}`;
                 const selected = multiSelect ? asStringList(value).includes(child.value) : value === child.value;
                 const showImages = Boolean(field.showOptionImages || field.type === "image_choice");
@@ -544,18 +555,18 @@ function FieldRenderer({
                       onChange(result.value ?? (multiSelect ? [] : ""));
                     }}
                     className={cn(
-                      "overflow-hidden rounded-[1.4rem] border bg-[var(--paper)] text-right shadow-[0_10px_30px_rgba(37,43,28,0.05)] transition",
+                      "overflow-hidden rounded-[1.4rem] border bg-[var(--paper)] text-right shadow-[0_10px_30px_rgba(37,43,28,0.05)] transition scroll-mb-28",
                       selected ? "border-[var(--olive)] ring-4 ring-[#3f472d18]" : "border-[var(--border)]",
                       field.locked && "opacity-90"
                     )}
                   >
                     {showImages ? (
                       image ? (
-                        <OptimizedThumb
+                        <ImagePreviewThumb
                           src={image}
                           alt={child.imageAlt || label}
                           sizes="(max-width: 640px) 100vw, 50vw"
-                          eager={prioritizeImages && optionIndex === 0 && childIndex === 0}
+                          className="rounded-none border-0"
                         />
                       ) : (
                         <div className="grid aspect-[4/3] place-items-center bg-[#f3ead6] px-4 text-center text-sm font-bold text-[var(--muted)]">

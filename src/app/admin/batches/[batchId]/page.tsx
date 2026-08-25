@@ -2,11 +2,14 @@ import { notFound } from "next/navigation";
 import { archiveBatchAction } from "@/app/actions";
 import { ArchiveConfirmButton } from "@/components/archive-confirm-button";
 import { BatchFormRelationshipCard } from "@/components/batch-form-relationship";
+import { BookingLinkCard } from "@/components/booking-link-card";
 import { BookingWorkspaceNav, batchWorkspaceItems } from "@/components/booking-workspace-nav";
+import { BatchPermissionPolicyPanel } from "@/components/permission-policy-panels";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getAdminForm, getBatch, listStudents, listSubmissions } from "@/lib/data";
 import { statusLabels } from "@/lib/demo-data";
+import { getPublicAppUrl, requestOrigin } from "@/lib/public-url";
 
 export default async function BatchDetailPage({
   params,
@@ -27,6 +30,9 @@ export default async function BatchDetailPage({
   ]);
   const formHref = batch.form ? `/admin/forms/${batch.form.id}` : "/admin/forms";
   const formDefinition = linkedForm?.definition ?? batch.form?.definition;
+  const origin = getPublicAppUrl(await requestOrigin());
+  const bookingUrl = batch.form ? `${origin}/f/${batch.form.slug}` : "";
+  const bookingStatus = linkedForm?.status ?? batch.form?.status ?? "draft";
 
   return (
     <div className="grid gap-4 sm:gap-6">
@@ -111,6 +117,14 @@ export default async function BatchDetailPage({
         <Stat label="لم يرسلوا" value={batch.stats.pending} />
         <Stat label="الطلبات الظاهرة" value={orders.length} />
       </div>
+
+      {batch.form && bookingUrl ? (
+        <BookingLinkCard publicUrl={bookingUrl} status={bookingStatus} />
+      ) : null}
+
+      {user.role === "OWNER" ? (
+        <BatchPermissionPolicyPanel batchId={batch.id} initial={batch.student_permission_policy} />
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

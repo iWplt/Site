@@ -50,11 +50,15 @@ export function requireSupabaseSecretsForWrites() {
 /**
  * True when this process is serving a real production deployment.
  * Excludes Next.js build/export phases where NODE_ENV is also "production".
+ *
+ * Cloudflare Workers (OpenNext): set WARKA_RUNTIME_ENV=production via wrangler `vars`
+ * or `.dev.vars` for preview. CF_PAGES is left as a secondary signal for Pages deploys.
  */
 export function isProductionRuntime() {
   if (process.env.WARKA_RUNTIME_ENV === "production") return true;
   if (process.env.VERCEL_ENV === "production") return true;
   if (process.env.CONTEXT === "production" && process.env.NETLIFY === "true") return true;
+  if (process.env.CF_PAGES === "1" && process.env.CF_PAGES_BRANCH === "main") return true;
 
   if (process.env.NODE_ENV === "production") {
     const phase = process.env.NEXT_PHASE;

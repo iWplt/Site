@@ -14,4 +14,14 @@ supabase/.temp
 tmp-*.json
 .tmp-screenshots
 .tmp-playwright
+.tmp-cf*
+.tmp-audit-images
 public/warka-brand/WARKA_mobile_visual_assets
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

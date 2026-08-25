@@ -235,14 +235,18 @@ export function BatchStudentsPanel({
               >
                 {student.code_status === "DISABLED" ? "تفعيل" : "تعطيل"}
               </Button>
+              <Button
+                className="min-h-12"
+                variant="ghost"
+                onClick={() => router.push(`/admin/students/${student.id}`)}
+              >
+                صلاحيات التخصيص
+              </Button>
               {student.booking_number ? (
                 <Button className="min-h-12" variant="ghost" onClick={() => router.push(`/admin/orders?q=${student.booking_number}`)}>
                   عرض الحجز
                 </Button>
-              ) : (
-                <div />
-              )}
-            </div>
+              ) : null}            </div>
           </>
         )}
       />

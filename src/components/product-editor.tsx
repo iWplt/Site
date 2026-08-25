@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createProductAction, createProductCategoryAction, updateProductAction, uploadProductImageAction } from "@/app/actions";
+import { createProductAction, createProductCategoryAction, updateProductAction } from "@/app/actions";
 import { Button, Card, FieldLabel, LinkButton, Select, TextArea, TextInput } from "@/components/ui";
+import { uploadAdminImage } from "@/lib/admin-image-upload-client";
 import type { CatalogProduct, ProductCategory } from "@/lib/types";
 
 type Props = {
@@ -129,9 +130,14 @@ export function ProductEditor({ categories, batches, forms, product }: Props) {
       {product ? (
         <form
           className="mt-4"
-          action={async (formData) => {
-            formData.set("product_id", product.id);
-            const result = await uploadProductImageAction(formData);
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const file = new FormData(event.currentTarget).get("file");
+            if (!(file instanceof File) || !file.size) {
+              setMessage("بيانات الصورة غير مكتملة.");
+              return;
+            }
+            const result = await uploadAdminImage("catalog", { product_id: product.id }, file);
             setMessage(result.success ? "تم رفع الصورة." : result.error);
           }}
         >

@@ -680,3 +680,93 @@ test("J: catalog Form Product options are outfit-resolvable without الخيار
   const reconciled = reconcileAllowedOptionValues(live, { robe_model: ["prod-american-robe", "stale-gone"] });
   assert.deepEqual(reconciled?.robe_model, ["prod-american-robe"]);
 });
+
+test("student sees an outfit picker when more than one enabled outfit exists", () => {
+  const live = applyOutfitArchitecture({
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        { id: "royal", name: "زي ملكي", enabled: true, productOrder: ["robe", "sash", "cap"] },
+        { id: "mix", name: "زي مكس", enabled: true, productOrder: ["robe", "sash", "cap"] },
+        { id: "american", name: "زي أمريكي", enabled: true, productOrder: ["robe", "sash", "cap"] },
+        { id: "custom", name: "زي مخصص", enabled: false, productOrder: ["robe"] }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  });
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "full_outfit_id");
+  assert.equal(field?.label, "اختيار الزي");
+  assert.equal(field?.type, "radio");
+  assert.equal(field?.required, true);
+  assert.equal(fieldIsVisible(field!, { booking_type: "full_set" }), true);
+  assert.equal(fieldIsVisible(field!, { booking_type: "single_pieces" }), false);
+  assert.deepEqual(
+    (field?.options ?? []).map((option) => option.label),
+    ["زي ملكي", "زي مكس", "زي أمريكي"]
+  );
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set", full_outfit_id: "american" });
+  assert.equal(answers.full_outfit_id, "american");
+  assert.deepEqual(answers.selected_products, ["robe", "sash", "cap"]);
+});
+
+test("single enabled outfit skips the picker and auto-selects that outfit", () => {
+  const live = applyOutfitArchitecture({
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [{ id: "mix", name: "زي مكس", enabled: true, productOrder: ["robe", "sash", "cap"] }],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  });
+  const field = live.sections.flatMap((section) => section.fields).find((entry) => entry.key === "full_outfit_id");
+  assert.equal(fieldIsVisible(field!, { booking_type: "full_set" }), false);
+  const answers = resolveOutfitAnswers(live, { booking_type: "full_set" });
+  assert.equal(answers.full_outfit_id, "mix");
+});
+
+test("single item does not keep a full-outfit id or outfit-only restrictions", () => {
+  const live = applyOutfitArchitecture({
+    ...defaultWarkaFormDefinition,
+    outfitConfig: {
+      fullOutfits: [
+        {
+          id: "royal",
+          name: "زي ملكي",
+          enabled: true,
+          productOrder: ["robe", "sash", "cap"],
+          productSettings: { robe: { allowedOptions: { robe_model: ["gulf"] }, hiddenFields: ["robe_notes"] } }
+        }
+      ],
+      singleItemEnabled: true,
+      singleItemProducts: ["robe", "sash", "cap"],
+      productOrder: ["robe", "sash", "cap"]
+    }
+  });
+  const answers = resolveOutfitAnswers(live, {
+    booking_type: "single_pieces",
+    full_outfit_id: "royal",
+    selected_products: ["robe"],
+    sash_back_text: "should-not-submit",
+    robe_notes: "keep-for-form-product"
+  });
+  assert.equal(answers.full_outfit_id, undefined);
+  assert.deepEqual(answers.selected_products, ["robe"]);
+  assert.equal(answers.sash_back_text, undefined);
+  assert.equal(answers.robe_notes, "keep-for-form-product");
+  const robeModel = live.sections.flatMap((section) => section.fields).find((field) => field.key === "robe_model");
+  const options = optionsForBookingContext(robeModel!, live, answers);
+  assert.ok(options.length > 1);
+});
+
+test("hidden sash back values are cleared when the sash is not embroidered", () => {
+  const live = applyOutfitArchitecture(defaultWarkaFormDefinition);
+  const answers = resolveOutfitAnswers(live, {
+    booking_type: "full_set",
+    sash_type: "normal_no_back",
+    sash_back_text: "hidden-text"
+  });
+  assert.equal(answers.sash_back_text, undefined);
+});

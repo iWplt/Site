@@ -4,9 +4,10 @@ import { useRef, useState, useTransition } from "react";
 import {
   deleteFormOptionImageAction,
   updateFormFieldMetaAction,
-  updateFormOptionAction,
-  uploadFormOptionImageAction
+  updateFormOptionAction
 } from "@/app/actions";
+import { uploadAdminImage } from "@/lib/admin-image-upload-client";
+import { ImagePreviewThumb } from "@/components/image-preview";
 import { Button, FieldLabel, TextInput } from "@/components/ui";
 import type { FormField, FormOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -161,12 +162,11 @@ function OptionRow({
     const prior = previousPreview.current ?? preview;
     startTransition(async () => {
       try {
-        const body = new FormData();
-        body.set("formId", formId);
-        body.set("fieldKey", fieldKey);
-        body.set("optionId", option.id);
-        body.set("file", file);
-        const result = await uploadFormOptionImageAction(body);
+        const result = await uploadAdminImage(
+          "option",
+          { formId, fieldKey, optionId: option.id },
+          file
+        );
         if (!result.success) {
           setPreview(prior);
           onMessage(result.error);
@@ -207,8 +207,12 @@ function OptionRow({
     <div className="grid gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-3 sm:grid-cols-[7.5rem_1fr]">
       <div className="overflow-hidden rounded-2xl border border-dashed border-[var(--border)] bg-[#3f472d08]">
         {preview ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt={option.imageAlt || option.label} className="aspect-square w-full object-contain" />
+          <ImagePreviewThumb
+            src={preview}
+            alt={option.imageAlt || option.label}
+            className="aspect-square w-full"
+            sizes="120px"
+          />
         ) : (
           <div className="grid aspect-square place-items-center px-2 text-center text-xs font-bold text-[var(--muted)]">
             لم تتم إضافة صورة

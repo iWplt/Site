@@ -1,0 +1,25 @@
+# Copied into .dev.vars for `opennextjs-cloudflare preview` / wrangler local runtime.
+# NEVER commit real .dev.vars — it is gitignored.
+#
+# NEXTJS_ENV controls which Next.js .env* files OpenNext loads.
+# Use "production" for Workers preview against real Supabase (recommended for migration smoke tests).
+NEXTJS_ENV=production
+WARKA_RUNTIME_ENV=production
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+# Server-only — never expose as NEXT_PUBLIC_*
+SUPABASE_SERVICE_ROLE_KEY=
+ACCESS_CODE_ENCRYPTION_KEY=
+ACCESS_CODE_HMAC_SECRET=
+BOOKING_SESSION_SECRET=
+
+# Local Workers preview origin (wrangler default). For production this is set in wrangler `vars`:
+# NEXT_PUBLIC_APP_URL=https://graduation.warka.workers.dev
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:8787
+
+# Optional
+# RECEIPT_TTL_DAYS=30
+# ACCESS_CODE_RATE_LIMIT_MAX=8
+# ACCESS_CODE_RATE_LIMIT_WINDOW_SECONDS=900
+# ACCESS_CODE_RATE_LIMIT_COOLDOWN_SECONDS=600

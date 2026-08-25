@@ -4,7 +4,7 @@ import { verifyBookingSession } from "@/lib/security";
 import { assertPersistenceAllowed } from "@/lib/persistence";
 import { storeStudentUpload } from "@/lib/storage/uploads";
 import { sniffAllowedMime, STUDENT_UPLOAD_MIMES } from "@/lib/upload-security";
-import { STUDENT_UPLOAD_MAX_BYTES } from "@/lib/upload-limits";
+import { STUDENT_UPLOAD_MAX_BYTES, uploadSizeError } from "@/lib/upload-limits";
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -23,8 +23,9 @@ export async function POST(request: Request) {
   if (!(file instanceof File) || !fieldKey) {
     return NextResponse.json({ error: "بيانات الملف غير مكتملة." }, { status: 400 });
   }
-  if (file.size > STUDENT_UPLOAD_MAX_BYTES) {
-    return NextResponse.json({ error: "نوع الملف أو حجمه غير مسموح." }, { status: 400 });
+  const sizeError = uploadSizeError(file.size, STUDENT_UPLOAD_MAX_BYTES);
+  if (sizeError) {
+    return NextResponse.json({ error: sizeError }, { status: 400 });
   }
 
   try {

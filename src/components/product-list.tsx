@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { archiveProductAction, reorderProductAction, toggleProductActiveAction } from "@/app/actions";
+import { ImagePreviewThumb } from "@/components/image-preview";
 import { Badge, Button, Card, LinkButton, Select, TextInput } from "@/components/ui";
 import { formatProductPrice } from "@/lib/product-catalog";
 import type { CatalogProduct, ProductCategory } from "@/lib/types";
@@ -61,10 +62,15 @@ export function ProductList({
           <div className="grid gap-4 sm:grid-cols-[7rem_1fr]">
             <div className="overflow-hidden rounded-2xl bg-[#f3ead6]">
               {product.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={product.image_url} alt={product.name_ar} className="h-28 w-full object-cover" />
+                <ImagePreviewThumb
+                  src={product.image_url}
+                  alt={product.name_ar}
+                  sizes="112px"
+                  aspectClassName="aspect-[4/3]"
+                  className="rounded-2xl border-0"
+                />
               ) : (
-                <div className="grid h-28 place-items-center text-xs font-bold text-[var(--muted)]">بدون صورة</div>
+                <div className="grid aspect-[4/3] place-items-center text-xs font-bold text-[var(--muted)]">بدون صورة</div>
               )}
             </div>
             <div className="min-w-0">

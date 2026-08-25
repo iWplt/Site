@@ -22,7 +22,8 @@ import { getPersistenceMode } from "@/lib/persistence";
 import { mutateDb, readDb, type LocalDatabase } from "@/lib/store/local-db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireSupabaseSecretsForWrites } from "@/lib/env";
-import { extensionForMime, stableStorageSegment } from "@/lib/upload-security";
+import { extensionForMime } from "@/lib/upload-security";
+import { catalogProductImageStorageKey } from "@/lib/form-image-storage-keys";
 import { safeSlug } from "@/lib/utils";
 
 const FORM_OPTIONS_BUCKET = "form-options";
@@ -445,7 +446,7 @@ export async function createProductCategory(nameAr: string, nameEn?: string) {
 
 export async function saveCatalogProductImage(productId: string, file: { buffer: Buffer; mimeType: string; originalName: string }) {
   const extension = extensionForMime(file.mimeType);
-  const path = `catalog/${stableStorageSegment(productId)}/reference.${extension}`;
+  const path = `${catalogProductImageStorageKey(productId)}/reference.${extension}`;
   if (getPersistenceMode() === "supabase") {
     requireSupabaseSecretsForWrites();
     const admin = createAdminClient();
@@ -460,7 +461,7 @@ export async function saveCatalogProductImage(productId: string, file: { buffer:
   }
   const { writeFileSync, mkdirSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const relativeDir = join("uploads", "form-options", "catalog", stableStorageSegment(productId));
+  const relativeDir = join("uploads", "form-options", ...catalogProductImageStorageKey(productId).split("/"));
   const absoluteDir = join(process.cwd(), "public", relativeDir);
   mkdirSync(absoluteDir, { recursive: true });
   writeFileSync(join(absoluteDir, `reference.${extension}`), file.buffer);

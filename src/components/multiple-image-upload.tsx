@@ -2,6 +2,7 @@
 
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { useState } from "react";
+import { ImagePreviewThumb } from "@/components/image-preview";
 import { optimizeStudentImage } from "@/lib/optimize-student-image";
 import {
   STUDENT_UPLOAD_MAX_BYTES,
@@ -123,20 +124,34 @@ export function MultipleImageUpload({
         ميجابايت لكل ملف. تُضغط الصور تلقائياً قبل الرفع.
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {value.map((file, index) => (
-          <div key={`${file.path}-${index}`} className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={file.previewUrl ?? file.path} alt="" className="aspect-square w-full bg-[#f3ead6] object-contain" />
-            <button
-              type="button"
-              className="absolute left-2 top-2 min-h-11 min-w-11 rounded-full bg-[#9d2f2f] p-2 text-white"
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
-              aria-label="حذف الصورة"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
+        {value.map((file, index) => {
+          const preview = file.previewUrl ?? file.path;
+          const isImage = (file.mimeType || "").startsWith("image/");
+          return (
+            <div key={`${file.path}-${index}`} className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
+              {isImage ? (
+                <ImagePreviewThumb
+                  src={preview}
+                  alt={file.originalName || label}
+                  sizes="(max-width: 640px) 45vw, 180px"
+                  aspectClassName="aspect-[4/3]"
+                  className="rounded-none border-0"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={preview} alt={file.originalName || ""} className="aspect-[4/3] w-full bg-[#f3ead6] object-contain" />
+              )}
+              <button
+                type="button"
+                className="absolute left-2 top-2 z-10 min-h-11 min-w-11 rounded-full bg-[#9d2f2f] p-2 text-white"
+                onClick={() => onChange(value.filter((_, i) => i !== index))}
+                aria-label="حذف الصورة"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          );
+        })}
         {value.length < limit ? (
           <label
             className={cn(
